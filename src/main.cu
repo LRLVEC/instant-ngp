@@ -8,9 +8,9 @@
  * license agreement from NVIDIA CORPORATION is strictly prohibited.
  */
 
-/** @file   main.cu
- *  @author Thomas Müller, NVIDIA
- */
+ /** @file   main.cu
+  *  @author Thomas Müller, NVIDIA
+  */
 
 #include <neural-graphics-primitives/testbed.h>
 
@@ -26,7 +26,8 @@ using namespace std;
 using namespace tcnn;
 namespace fs = ::filesystem;
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
 	ArgumentParser parser{
 		"neural graphics primitives\n"
 		"version " NGP_VERSION,
@@ -105,70 +106,102 @@ int main(int argc, char** argv) {
 
 	// Parse command line arguments and react to parsing
 	// errors using exceptions.
-	try {
+	try
+	{
 		parser.ParseCLI(argc, argv);
-	} catch (const Help&) {
+	}
+	catch (const Help&)
+	{
 		cout << parser;
 		return 0;
-	} catch (const ParseError& e) {
+	}
+	catch (const ParseError& e)
+	{
 		cerr << e.what() << endl;
 		cerr << parser;
 		return -1;
-	} catch (const ValidationError& e) {
+	}
+	catch (const ValidationError& e)
+	{
 		cerr << e.what() << endl;
 		cerr << parser;
 		return -2;
 	}
 
-	if (version_flag) {
+	if (version_flag)
+	{
 		tlog::none() << "neural graphics primitives version " NGP_VERSION;
 		return 0;
 	}
 
-	try {
+	try
+	{
 		ETestbedMode mode;
-		if (!mode_flag) {
-			if (!scene_flag) {
+		if (!mode_flag)
+		{
+			if (!scene_flag)
+			{
 				tlog::error() << "Must specify either a mode or a scene";
 				return 1;
 			}
 
 			fs::path scene_path = get(scene_flag);
-			if (!scene_path.exists()) {
+			if (!scene_path.exists())
+			{
 				tlog::error() << "Scene path " << scene_path << " does not exist.";
 				return 1;
 			}
 
-			if (scene_path.is_directory() || equals_case_insensitive(scene_path.extension(), "json")) {
+			if (scene_path.is_directory() || equals_case_insensitive(scene_path.extension(), "json"))
+			{
 				mode = ETestbedMode::Nerf;
-			} else if (equals_case_insensitive(scene_path.extension(), "obj") || equals_case_insensitive(scene_path.extension(), "stl")) {
+			}
+			else if (equals_case_insensitive(scene_path.extension(), "obj") || equals_case_insensitive(scene_path.extension(), "stl"))
+			{
 				mode = ETestbedMode::Sdf;
-			} else if (equals_case_insensitive(scene_path.extension(), "nvdb")) {
+			}
+			else if (equals_case_insensitive(scene_path.extension(), "nvdb"))
+			{
 				mode = ETestbedMode::Volume;
-			} else {
+			}
+			else
+			{
 				mode = ETestbedMode::Image;
 			}
-		} else {
+		}
+		else
+		{
 			auto mode_str = get(mode_flag);
-			if (equals_case_insensitive(mode_str, "nerf")) {
+			if (equals_case_insensitive(mode_str, "nerf"))
+			{
 				mode = ETestbedMode::Nerf;
-			} else if (equals_case_insensitive(mode_str, "sdf")) {
+			}
+			else if (equals_case_insensitive(mode_str, "sdf"))
+			{
 				mode = ETestbedMode::Sdf;
-			} else if (equals_case_insensitive(mode_str, "image")) {
+			}
+			else if (equals_case_insensitive(mode_str, "image"))
+			{
 				mode = ETestbedMode::Image;
-			} else if (equals_case_insensitive(mode_str, "volume")) {
+			}
+			else if (equals_case_insensitive(mode_str, "volume"))
+			{
 				mode = ETestbedMode::Volume;
-			} else {
+			}
+			else
+			{
 				tlog::error() << "Mode must be one of 'nerf', 'sdf', 'image', and 'volume'.";
 				return 1;
 			}
 		}
 
-		Testbed testbed{mode};
+		Testbed testbed{ mode };
 
-		if (scene_flag) {
+		if (scene_flag)
+		{
 			fs::path scene_path = get(scene_flag);
-			if (!scene_path.exists()) {
+			if (!scene_path.exists())
+			{
 				tlog::error() << "Scene path " << scene_path << " does not exist.";
 				return 1;
 			}
@@ -176,38 +209,50 @@ int main(int argc, char** argv) {
 		}
 
 		std::string mode_str;
-		switch (mode) {
-			case ETestbedMode::Nerf:   mode_str = "nerf";   break;
-			case ETestbedMode::Sdf:    mode_str = "sdf";    break;
-			case ETestbedMode::Image:  mode_str = "image";  break;
-			case ETestbedMode::Volume: mode_str = "volume"; break;
+		switch (mode)
+		{
+		case ETestbedMode::Nerf:   mode_str = "nerf";   break;
+		case ETestbedMode::Sdf:    mode_str = "sdf";    break;
+		case ETestbedMode::Image:  mode_str = "image";  break;
+		case ETestbedMode::Volume: mode_str = "volume"; break;
 		}
 
-		if (snapshot_flag) {
+		if (snapshot_flag)
+		{
 			// Load network from a snapshot if one is provided
 			fs::path snapshot_path = get(snapshot_flag);
-			if (!snapshot_path.exists()) {
+			if (!snapshot_path.exists())
+			{
 				tlog::error() << "Snapshot path " << snapshot_path << " does not exist.";
 				return 1;
 			}
 
 			testbed.load_snapshot(snapshot_path.str());
 			testbed.m_train = false;
-		} else {
+		}
+		else
+		{
 			// Otherwise, load the network config and prepare for training
-			fs::path network_config_path = fs::path{"configs"}/mode_str;
-			if (network_config_flag) {
+			fs::path network_config_path = fs::path{ "configs" } / mode_str;
+			if (network_config_flag)
+			{
 				auto network_config_str = get(network_config_flag);
-				if ((network_config_path/network_config_str).exists()) {
-					network_config_path = network_config_path/network_config_str;
-				} else {
+				if ((network_config_path / network_config_str).exists())
+				{
+					network_config_path = network_config_path / network_config_str;
+				}
+				else
+				{
 					network_config_path = network_config_str;
 				}
-			} else {
-				network_config_path = network_config_path/"base.json";
+			}
+			else
+			{
+				network_config_path = network_config_path / "base.json";
 			}
 
-			if (!network_config_path.exists()) {
+			if (!network_config_path.exists())
+			{
 				tlog::error() << "Network config path " << network_config_path << " does not exist.";
 				return 1;
 			}
@@ -221,17 +266,22 @@ int main(int argc, char** argv) {
 		gui = false;
 #endif
 
-		if (gui) {
+		if (gui)
+		{
 			testbed.init_window(width_flag ? get(width_flag) : 1920, height_flag ? get(height_flag) : 1080);
 		}
 
 		// Render/training loop
-		while (testbed.frame()) {
-			if (!gui) {
+		while (testbed.frame())
+		{
+			if (!gui)
+			{
 				tlog::info() << "iteration=" << testbed.m_training_step << " loss=" << testbed.m_loss_scalar.val();
 			}
 		}
-	} catch (const exception& e) {
+	}
+	catch (const exception& e)
+	{
 		tlog::error() << "Uncaught exception: " << e.what();
 		return 1;
 	}
