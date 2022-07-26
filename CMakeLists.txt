@@ -7,7 +7,7 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 cmake_minimum_required(VERSION 3.18)
-
+set(CMAKE_EXPORT_COMPILE_COMMANDS True)
 project(instant-ngp
 	VERSION 1.0
 	DESCRIPTION "Instant neural graphics primitives"
