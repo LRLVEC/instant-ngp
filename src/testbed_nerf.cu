@@ -1239,7 +1239,7 @@ __device__ LossAndGradient loss_and_gradient(const Vector3f& target, const Vecto
 		default: case ELossType::L2: return l2_loss(target, prediction); break;
 	}
 }
-
+// Nerf loss!
 __global__ void compute_loss_kernel_train_nerf(
 	const uint32_t n_rays,
 	BoundingBox aabb,
@@ -2075,6 +2075,7 @@ uint32_t Testbed::NerfTracer::trace(
 			CUDA_CHECK_THROW(cudaMemcpyAsync(&n_alive, m_alive_counter.data(), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream));
 			CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 		}
+		// printf("%u\n", n_alive);
 
 		if (n_alive == 0) {
 			break;
@@ -2748,6 +2749,7 @@ float Testbed::Nerf::Training::Counters::update_after_training(uint32_t target_b
 	return loss_scalar;
 }
 
+// Train here!
 void Testbed::train_nerf(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream) {
 	if (m_nerf.training.n_images_for_training == 0) {
 		return;
@@ -2995,6 +2997,7 @@ void Testbed::train_nerf(uint32_t target_batch_size, bool get_loss_scalar, cudaS
 	}
 }
 
+// Train nerf step!
 void Testbed::train_nerf_step(uint32_t target_batch_size, uint32_t n_rays_per_batch, uint32_t* counter, uint32_t* compacted_counter, float* loss, cudaStream_t stream) {
 	const uint32_t padded_output_width = m_network->padded_output_width();
 	const uint32_t max_samples = target_batch_size * 16; // Somewhat of a worst case

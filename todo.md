@@ -1,0 +1,1 @@
+1. change how cursor applys to the camera pos: testbed.cu:1335, mouse_drag

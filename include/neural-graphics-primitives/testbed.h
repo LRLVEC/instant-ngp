@@ -457,7 +457,7 @@ public:
 	Eigen::Matrix<float, 3, 4> m_prev_camera = Eigen::Matrix<float, 3, 4>::Zero();
 	size_t m_render_skip_due_to_lack_of_camera_movement_counter = 0;
 
-	bool m_fps_camera = false;
+	bool m_fps_camera = true;
 	bool m_camera_smoothing = false;
 	bool m_autofocus = false;
 	Eigen::Vector3f m_autofocus_target = Eigen::Vector3f::Constant(0.5f);

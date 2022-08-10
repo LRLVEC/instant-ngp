@@ -283,11 +283,16 @@ void Testbed::reset_camera() {
 	m_zoom = 1.f;
 	m_screen_center = Vector2f::Constant(0.5f);
 	m_scale = m_testbed_mode == ETestbedMode::Image ? 1.0f : 1.5f;
+	// reset camera
 	m_camera <<
-		1.0f, 0.0f, 0.0f, 0.5f,
-		0.0f, -1.0f, 0.0f, 0.5f,
-		0.0f, 0.0f, -1.0f, 0.5f;
-	m_camera.col(3) -= m_scale * view_dir();
+		1.0f, 0.0f, 0.0f, 0.f,
+		0.0f, 1.0f, 0.0f, 0.f,
+		0.0f, 0.0f, 1.0f, 0.f;
+	// m_camera <<
+	// 	1.0f, 0.0f, 0.0f, 0.5f,
+	// 	0.0f, -1.0f, 0.0f, 0.5f,
+	// 	0.0f, 0.0f, -1.0f, 0.5f;
+	// m_camera.col(3) -= m_scale * view_dir();
 	m_smoothed_camera = m_camera;
 	m_up_dir = {0.0f, 1.0f, 0.0f};
 	m_sun_dir = Vector3f::Ones().normalized();
@@ -1206,10 +1211,10 @@ bool Testbed::keyboard_event() {
 		m_camera_path.m_gizmo_op = ImGuizmo::ROTATE;
 	}
 
-	if (ImGui::IsKeyPressed('E')) {
-		set_exposure(m_exposure + (shift ? -0.5f : 0.5f));
-		redraw_next_frame();
-	}
+	// if (ImGui::IsKeyPressed('E')) {
+	// 	set_exposure(m_exposure + (shift ? -0.5f : 0.5f));
+	// 	redraw_next_frame();
+	// }
 	if (ImGui::IsKeyPressed('R')) {
 		if (shift) {
 			reset_camera();
@@ -1281,17 +1286,37 @@ bool Testbed::keyboard_event() {
 	} else if (ImGui::IsKeyPressed('-') || ImGui::IsKeyPressed('_')) {
 		m_camera_velocity /= 1.5f;
 	}
-
+	// QE camera rotate
+	float rotate_angle = 0;
+	if (ImGui::IsKeyDown('Q')) {
+		rotate_angle += -1.0f;
+	}
+	if (ImGui::IsKeyDown('E')) {
+		rotate_angle += 1.0f;
+	}
+	if (rotate_angle)
+	{
+		rotate_angle *= 0.1f;
+		float c(cosf(rotate_angle));
+		float s(sinf(rotate_angle));
+		Matrix3f rot;
+		rot <<
+			c, -s, 0.f,
+			s, c, 0.f,
+			0.f, 0.f, 1;
+		m_camera.block<3,3>(0,0) = m_camera.block<3,3>(0,0) * rot;
+		reset_accumulation(true);
+	}
 	// WASD camera movement
 	Vector3f translate_vec = Vector3f::Zero();
 	if (ImGui::IsKeyDown('W')) {
-		translate_vec.z() += 1.0f;
+		translate_vec.y() += -1.0f;
 	}
 	if (ImGui::IsKeyDown('A')) {
 		translate_vec.x() += -1.0f;
 	}
 	if (ImGui::IsKeyDown('S')) {
-		translate_vec.z() += -1.0f;
+		translate_vec.y() += 1.0f;
 	}
 	if (ImGui::IsKeyDown('D')) {
 		translate_vec.x() += 1.0f;
@@ -1302,7 +1327,7 @@ bool Testbed::keyboard_event() {
 	if (ImGui::IsKeyDown('C')) {
 		translate_vec.y() += 1.0f;
 	}
-	translate_vec *= m_camera_velocity * m_frame_ms.val() / 1000.0f;
+	translate_vec *= m_camera_velocity * m_frame_ms.val() / 2000.0f;
 	if (shift) {
 		translate_vec *= 5;
 	}
@@ -1318,11 +1343,14 @@ void Testbed::mouse_wheel(Vector2f m, float delta) {
 		return;
 	}
 
-	if (!ImGui::GetIO().WantCaptureMouse) {
-		float scale_factor = pow(1.1f, -delta);
-		m_image.pos = (m_image.pos - m) / scale_factor + m;
-		set_scale(m_scale * scale_factor);
-	}
+	// if (!ImGui::GetIO().WantCaptureMouse) {
+	// 	float scale_factor = pow(1.1f, -delta);
+	// 	m_image.pos = (m_image.pos - m) / scale_factor + m;
+	// 	set_scale(m_scale * scale_factor);
+	// }
+	Vector3f translate_vec = Vector3f::Zero();
+	translate_vec(2) = delta/40;
+	translate_camera(translate_vec);
 
 	reset_accumulation(true);
 }
@@ -1341,14 +1369,34 @@ void Testbed::mouse_drag(const Vector2f& rel, int button) {
 			determine_autofocus_target_from_pixel({mouse.x, mouse.y});
 			reset_accumulation();
 		} else {
-			float rot_sensitivity = m_fps_camera ? 0.35f : 1.0f;
-			Matrix3f rot =
-				(AngleAxisf(static_cast<float>(-rel.x() * 2 * PI() * rot_sensitivity), up) * // Scroll sideways around up vector
-				AngleAxisf(static_cast<float>(-rel.y() * 2 * PI() * rot_sensitivity), side)).matrix(); // Scroll around side vector
+			// float rot_sensitivity = m_fps_camera ? 0.35f : 1.0f;
+			float angle = rel.norm() / 500.0f;
+			float c = cosf(angle);
+			float s = sinf(angle);
+			Vector3f n;
+			n.x() = rel.y();
+			n.y() = -rel.x();
+			n.z() = 0;
+			n.normalize();
+			Matrix3f m;
+			for(int c0(0); c0 < 3; ++c0)
+				for(int c1(0); c1 < 3; ++c1)
+					m(c0, c1) = (1 - c) * n(c0) * n(c1);
+			for(int c0(0); c0 < 3; ++c0)
+					m(c0, c0) += c;
+			Matrix3f crossMat;
+			crossMat <<
+				0.0f, -s * n.z(), s * n.y(),
+				s * n.z(), 0.0f, -s * n.x(),
+				-s * n.y(), s * n.x(), 0.0f;
+			Matrix3f rot = m + crossMat;
+			// Matrix3f rot =
+			// 	(AngleAxisf(static_cast<float>(-rel.x() * 2 * PI() * rot_sensitivity), up) * // Scroll sideways around up vector
+			// 	AngleAxisf(static_cast<float>(-rel.y() * 2 * PI() * rot_sensitivity), side)).matrix(); // Scroll around side vector
 
 			m_image.pos += rel;
 			if (m_fps_camera) {
-				m_camera.block<3,3>(0,0) = rot * m_camera.block<3,3>(0,0);
+				m_camera.block<3,3>(0,0) = m_camera.block<3,3>(0,0) * rot;
 			} else {
 				// Turntable
 				auto old_look_at = look_at();
@@ -1381,7 +1429,7 @@ void Testbed::mouse_drag(const Vector2f& rel, int button) {
 }
 
 bool Testbed::begin_frame_and_handle_user_input() {
-	if (glfwWindowShouldClose(m_glfw_window) || ImGui::IsKeyDown(GLFW_KEY_ESCAPE) || ImGui::IsKeyDown(GLFW_KEY_Q)) {
+	if (glfwWindowShouldClose(m_glfw_window) || ImGui::IsKeyDown(GLFW_KEY_ESCAPE)) {
 		destroy_window();
 		return false;
 	}
@@ -1415,7 +1463,7 @@ bool Testbed::begin_frame_and_handle_user_input() {
 		if (ImGui::GetIO().MouseDown[1]) mb |= 2;
 		if (ImGui::GetIO().MouseDown[2]) mb |= 4;
 		mw = ImGui::GetIO().MouseWheel;
-		relm = {relm.x / (float)m_window_res.y(), relm.y / (float)m_window_res.y()};
+		// relm = {relm.x / (float)m_window_res.y(), relm.y / (float)m_window_res.y()};
 	}
 
 	if (m_testbed_mode == ETestbedMode::Nerf && (m_render_ground_truth || m_nerf.training.render_error_overlay)) {
@@ -1563,6 +1611,16 @@ void Testbed::train_and_render(bool skip_rendering) {
 		optimise_mesh_step(1);
 	}
 
+	for(int c0(0);c0<3;++c0)
+	{
+		for(int c1(0);c1<4;++c1)
+		{
+			printf("%4f\t", m_camera(c0, c1));
+		}
+		printf("\n");
+	}
+	printf("\n");
+	
 	apply_camera_smoothing(m_frame_ms.val());
 
 	if (!m_render_window || !m_render || skip_rendering) {
@@ -2412,6 +2470,7 @@ Testbed::~Testbed() {
 	}
 }
 
+// Train!
 void Testbed::train(uint32_t batch_size) {
 	if (!m_training_data_available) {
 		m_train = false;
@@ -2429,7 +2488,7 @@ void Testbed::train(uint32_t batch_size) {
 		ScopeGuard timing_guard{[&]() {
 			m_training_prep_ms.update(std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now()-start).count() / n_prep_to_skip);
 		}};
-
+		// update density grid nerf
 		switch (m_testbed_mode) {
 			case ETestbedMode::Nerf:   training_prep_nerf(batch_size, m_training_stream);  break;
 			case ETestbedMode::Sdf:    training_prep_sdf(batch_size, m_training_stream);   break;
