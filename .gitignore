@@ -16,3 +16,6 @@ imgui.ini
 
 /data/nerf/*
 !/data/nerf/fox
+!/data/nerf/read_transform.py
+!/data/nerf/formattter.sh
+
