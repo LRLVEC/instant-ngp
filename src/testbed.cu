@@ -496,7 +496,13 @@ void Testbed::imgui() {
 			ImGui::Text("Training paused");
 		}
 		if (m_testbed_mode == ETestbedMode::Nerf) {
-			ImGui::Text("Rays/batch: %d, Samples/ray: %.2f, Batch size: %d/%d", m_nerf.training.counters_rgb.rays_per_batch, (float)m_nerf.training.counters_rgb.measured_batch_size / (float)m_nerf.training.counters_rgb.rays_per_batch, m_nerf.training.counters_rgb.measured_batch_size, m_nerf.training.counters_rgb.measured_batch_size_before_compaction);
+			ImGui::Text("Rays/batch: %d, Samples/ray: %.2f, Patches/batch: %d, Total Patches: %d, Batch size: %d/%d",
+			m_nerf.training.counters_rgb.rays_per_batch,
+			(float)m_nerf.training.counters_rgb.measured_batch_size / (float)m_nerf.training.counters_rgb.rays_per_batch,
+			m_nerf.training.counters_rgb.patches_per_batch,
+			m_nerf.training.counters_rgb.n_patches_total,
+			m_nerf.training.counters_rgb.measured_batch_size,
+			m_nerf.training.counters_rgb.measured_batch_size_before_compaction);
 		}
 		float elapsed_training = std::chrono::duration<float>(std::chrono::steady_clock::now() - m_training_start_time_point).count();
 		ImGui::Text("Steps: %d, Loss: %0.6f (%0.2f dB), Elapsed: %.1fs", m_training_step, m_loss_scalar.ema_val(), linear_to_db(m_loss_scalar.ema_val()), elapsed_training);
@@ -518,6 +524,9 @@ void Testbed::imgui() {
 			// Importance sampling options, but still related to training
 			ImGui::Checkbox("Sample focal plane ~error", &m_nerf.training.sample_focal_plane_proportional_to_error);
 			ImGui::SameLine();
+			ImGui::Checkbox("Sample patches", &m_nerf.training.sample_patches);
+			ImGui::SliderInt("Log Patch size", &m_nerf.training.log_patch_size, 2, 4, "%d"); // minimal patch size is 4
+			ImGui::Text("Patch Size: %d", 1 << m_nerf.training.log_patch_size);
 			ImGui::Checkbox("Sample focal plane ~sharpness", &m_nerf.training.include_sharpness_in_error);
 			ImGui::Checkbox("Sample image ~error", &m_nerf.training.sample_image_proportional_to_error);
 			ImGui::Text("%dx%d error res w/ %d steps between updates", m_nerf.training.error_map.resolution.x(), m_nerf.training.error_map.resolution.y(), m_nerf.training.n_steps_between_error_map_updates);
@@ -1611,15 +1620,15 @@ void Testbed::train_and_render(bool skip_rendering) {
 		optimise_mesh_step(1);
 	}
 
-	for(int c0(0);c0<3;++c0)
-	{
-		for(int c1(0);c1<4;++c1)
-		{
-			printf("%4f\t", m_camera(c0, c1));
-		}
-		printf("\n");
-	}
-	printf("\n");
+	// for(int c0(0);c0<3;++c0)
+	// {
+	// 	for(int c1(0);c1<4;++c1)
+	// 	{
+	// 		printf("%4f\t", m_camera(c0, c1));
+	// 	}
+	// 	printf("\n");
+	// }
+	// printf("\n");
 	
 	apply_camera_smoothing(m_frame_ms.val());
 
