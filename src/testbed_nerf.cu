@@ -91,6 +91,12 @@ inline __host__ __device__ float calc_dt(float t, float cone_angle) {
 	return tcnn::clamp(t*cone_angle, MIN_CONE_STEPSIZE(), MAX_CONE_STEPSIZE());
 }
 
+inline __host__ __device__ float calc_s(float t, float cone_angle) {
+	float t0 = STEPSIZE() / cone_angle;
+ 	if (t <= t0) return t;
+	else return t0 * (__logf(t) - __logf(t0) + 1);
+}
+
 struct LossAndGradient {
 	Eigen::Array3f loss;
 	Eigen::Array3f gradient;
@@ -1071,6 +1077,7 @@ __global__ void generate_training_samples_nerf(
 	Ray* __restrict__ rays_out_unnormalized,
 	uint32_t* __restrict__ numsteps_out,
 	PitchedPtr<NerfCoordinate> coords_out,
+	float* s_coord_in, // regularized t, mid point of sample section
 	const uint32_t n_training_images,
 	const TrainingImageMetadata* __restrict__ metadata,
 	const TrainingXForm* training_xforms,
@@ -1204,6 +1211,7 @@ __global__ void generate_training_samples_nerf(
 	}
 
 	coords_out += base;
+	s_coord_in += base;
 
 	uint32_t ray_idx = atomicAdd(ray_counter, 1);
 
@@ -1220,6 +1228,7 @@ __global__ void generate_training_samples_nerf(
 		uint32_t mip = mip_from_dt(dt, pos);
 		if (density_grid_occupied_at(pos, density_grid, mip)) {
 			coords_out(j)->set_with_optional_extra_dims(warp_position(pos, aabb), warped_dir, warp_dt(dt), extra_dims, coords_out.stride_in_bytes);
+			s_coord_in[j] = calc_s(t, cone_angle);
 			++j;
 			t += dt;
 		} else {
@@ -1261,6 +1270,7 @@ __global__ void compute_loss_kernel_train_nerf(
 	const uint32_t max_samples_compacted,
 	const uint32_t* __restrict__ rays_counter,
 	float loss_scale,
+	float dist_loss_scale, // distortion loss scale
 	int padded_output_width,
 	const float* __restrict__ envmap_data,
 	float* __restrict__ envmap_gradient,
@@ -1279,6 +1289,11 @@ __global__ void compute_loss_kernel_train_nerf(
 	uint32_t* __restrict__ numsteps_in,
 	PitchedPtr<const NerfCoordinate> coords_in,
 	PitchedPtr<NerfCoordinate> coords_out,
+	float* s_coord_in, // regularized t, mid point of sample section
+	float* s_coord_out, // regularized t, mid point of sample section
+	float* weights_out, // weight at each sample point
+	float* sum_w, // cumsum of w
+	float* sum_wm, // cumsum of w*m
 	tcnn::network_precision_t* dloss_doutput,
 	ELossType loss_type,
 	ELossType depth_loss_type,
@@ -1312,6 +1327,7 @@ __global__ void compute_loss_kernel_train_nerf(
 	uint32_t base = numsteps_in[i*2+1];
 
 	coords_in += base;
+	s_coord_in += base;
 	network_output += base * padded_output_width;
 
 	float T = 1.f;
@@ -1325,6 +1341,7 @@ __global__ void compute_loss_kernel_train_nerf(
 	uint32_t compacted_numsteps = 0;
 	Eigen::Vector3f ray_o = rays_in_unnormalized[i].o;
 	for (; compacted_numsteps < numsteps; ++compacted_numsteps) {
+		// this cut-off makes difference between numsteps and compacted_numsteps, but doesn't affect the usage of s_coord_in
 		if (T < EPSILON) {
 			break;
 		}
@@ -1417,6 +1434,10 @@ __global__ void compute_loss_kernel_train_nerf(
 
 	max_level_compacted_ptr += compacted_base;
 	coords_out += compacted_base;
+	s_coord_out += compacted_base;
+	weights_out += compacted_base;
+	sum_w += compacted_base;
+	sum_wm += compacted_base;
 
 	dloss_doutput += compacted_base * padded_output_width;
 
@@ -1467,6 +1488,7 @@ __global__ void compute_loss_kernel_train_nerf(
 	}
 
 	loss_scale /= n_rays;
+	dist_loss_scale /= n_rays;
 
 	const float output_l2_reg = rgb_activation == ENerfActivation::Exponential ? 1e-4f : 0.0f;
 	const float output_l1_reg_density = *mean_density_ptr < NERF_MIN_OPTICAL_THICKNESS() ? 1e-4f : 0.0f;
@@ -1474,6 +1496,25 @@ __global__ void compute_loss_kernel_train_nerf(
 	// now do it again computing gradients
 	Array3f rgb_ray2 = { 0.f,0.f,0.f };
 	float depth_ray2 = 0.f;
+	T = 1.f;
+	float sw = 0.f;
+	float swm = 0.f;
+	// calc sum_w and sum_wm
+	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
+		const NerfCoordinate* coord_in = coords_in(j);
+		float dt = unwarp_dt(coord_in->dt);
+		const tcnn::vector_t<tcnn::network_precision_t, 4> local_network_output = *(tcnn::vector_t<tcnn::network_precision_t, 4>*)network_output;
+		const float density = network_to_density(float(local_network_output[3]), density_activation);
+		const float alpha = 1.f - __expf(-density * dt);
+		const float weight = alpha * T;
+		T *= (1.f - alpha);
+		s_coord_out[j] = s_coord_in[j];
+		weights_out[j] = weight;
+		sw += weight;
+		swm += weight * s_coord_in[j];
+		sum_w[j] = sw;
+		sum_wm[j] = swm;
+	}
 	T = 1.f;
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
 		if (max_level_rand_training) {
@@ -1523,6 +1564,7 @@ __global__ void compute_loss_kernel_train_nerf(
 			loss_scale * dloss_by_dmlp +
 			(float(local_network_output[3]) < 0.0f ? -output_l1_reg_density : 0.0f) +
 			(float(local_network_output[3]) > -10.0f && depth < near_distance ? 1e-4f : 0.0f);
+			// todo ===================================
 			;
 
 		*(tcnn::vector_t<tcnn::network_precision_t, 4>*)dloss_doutput = local_dL_doutput;
