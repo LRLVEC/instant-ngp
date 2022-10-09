@@ -67,6 +67,13 @@ enum class EMeshRenderMode : int {
 	FaceIDs,
 };
 
+enum class EGroundTruthRenderMode : int {
+	Shade,
+	Depth,
+	NumRenderModes,
+};
+static constexpr const char* GroundTruthRenderModeStr = "Shade\0Depth\0\0";
+
 enum class ERenderMode : int {
 	AO,
 	Shade,
@@ -166,15 +173,15 @@ struct TrainingXForm {
 	Eigen::Matrix<float, 3, 4> end;
 };
 
-enum class ECameraDistortionMode : int {
-	None,
-	Iterative,
+enum class ELensMode : int {
+	Perspective,
+	OpenCV,
 	FTheta,
 	LatLong,
 };
 
-struct CameraDistortion {
-	ECameraDistortionMode mode = ECameraDistortionMode::None;
+struct Lens {
+	ELensMode mode = ELensMode::Perspective;
 	float params[7] = {};
 };
 
