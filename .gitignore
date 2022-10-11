@@ -19,4 +19,3 @@ imgui.ini
 !/data/nerf/read_transform.py
 !/data/nerf/formattter.sh
 
-!/CMakeSettings.json

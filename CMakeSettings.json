@@ -2,7 +2,7 @@
   "configurations": [
     {
       "name": "x64-Debug",
-      "generator": "Ninja",
+      "generator": "Visual Studio 17 2022 Win64",
       "configurationType": "Debug",
       "inheritEnvironments": [ "msvc_x64_x64" ],
       "buildRoot": "${projectDir}\\build\\mipnerf360\\${name}",
@@ -10,7 +10,7 @@
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
-      "cmakeExecutable": "C:/Program Files/CMake/bin/cmake.exe"
+      "cmakeExecutable": "D:/programs/CMake/bin/cmake.exe"
     },
     {
       "name": "x64-Release",
@@ -18,7 +18,7 @@
       "configurationType": "RelWithDebInfo",
       "buildRoot": "${projectDir}\\build\\mipnerf360\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
-      "cmakeExecutable": "C:/Program Files/CMake/bin/cmake.exe",
+      "cmakeExecutable": "D:/programs/CMake/bin/cmake.exe",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
