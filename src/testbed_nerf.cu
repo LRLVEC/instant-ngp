@@ -3219,7 +3219,7 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		target_batch_size,
 		ray_counter,
 		LOSS_SCALE,
-		1e-3f,// distortion loss scale
+		1e-2f,// distortion loss scale
 		1e-3f,// opacity loss scale
 		padded_output_width,
 		m_envmap.envmap->params(),
