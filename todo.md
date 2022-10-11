@@ -4,3 +4,7 @@
 4. calculate distortion loss and its grad -- Done
 5. add opacity loss -- Done
 6. add random rays starting from positions outside the aabb
+   1. add function generate_extra_training_samples_nerf -- Done
+   2. add function compute_extra_ray_loss_kernel_train_nerf
+   3. add function train_extra_nerf_step
+   4. modify fucntion train_nerf

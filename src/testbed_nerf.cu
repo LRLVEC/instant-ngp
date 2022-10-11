@@ -105,6 +105,15 @@ inline __host__ __device__ float calc_s(float t, float cone_angle) {
 	else return t0 * (logf(t) - logf(t0) + 1);
 }
 
+inline __device__ Ray generate_random_ray(default_rng_t& rng, BoundingBox aabb)
+{
+	Ray ray;
+	float radius = 1.2f * aabb.diag().norm() / 2;
+	ray.o = aabb.center() + radius * random_dir(rng);
+	ray.d = (aabb.min + aabb.diag() * random_val(rng) - ray.o).normalized();
+	return ray;
+}
+
 struct LossAndGradient {
 	Eigen::Array3f loss;
 	Eigen::Array3f gradient;
@@ -1634,6 +1643,158 @@ __global__ void compute_loss_kernel_train_nerf(
 	}
 }
 
+// generate extra rays for training distortion loss
+__global__ void generate_extra_training_samples_nerf(
+	const uint32_t n_rays,
+	BoundingBox aabb,
+	const uint32_t max_samples,
+	default_rng_t rng,
+	uint32_t* __restrict__ ray_counter,
+	uint32_t* __restrict__ numsteps_counter,
+	uint32_t* __restrict__ ray_indices_out,
+	Ray* __restrict__ rays_out_unnormalized,
+	uint32_t* __restrict__ numsteps_out,
+	PitchedPtr<NerfCoordinate> coords_out,
+	float* s_coord_in, // regularized t, mid point of sample section
+	const uint8_t* __restrict__ density_grid,
+	bool max_level_rand_training,
+	float* __restrict__ max_level_ptr,
+	float cone_angle_constant
+) {
+	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+	if (i >= n_rays) return;
+	rng.advance(i * N_MAX_RANDOM_SAMPLES_PER_RAY());
+	float max_level = max_level_rand_training ? (random_val(rng) * 2.0f) : 1.0f; // Multiply by 2 to ensure 50% of training is at max level
+
+	const float* extra_dims = nullptr; // does not use any extra dims for extra rays
+
+	Ray ray = generate_random_ray(rng, aabb);
+	Vector2f tminmax = aabb.ray_intersect(ray.o, ray.d);
+	tminmax.x() = fmaxf(tminmax.x(), 0.0f);
+	float startt = tminmax.x();
+	startt += calc_dt(startt, cone_angle_constant) * random_val(rng);
+	Vector3f idir = ray.d.cwiseInverse();
+
+	// first pass to compute an accurate number of steps
+	uint32_t j = 0;
+	float t = startt;
+	Vector3f pos;
+
+	while (aabb.contains(pos = ray.o + t * ray.d) && j < NERF_STEPS()) {
+		float dt = calc_dt(t, cone_angle_constant);
+		uint32_t mip = mip_from_dt(dt, pos);
+		if (density_grid_occupied_at(pos, density_grid, mip)) {
+			++j;
+			t += dt;
+		}
+		else {
+			uint32_t res = NERF_GRIDSIZE() >> mip;
+			t = advance_to_next_voxel(t, cone_angle_constant, pos, ray.d, idir, res);
+		}
+	}
+	if (j == 0) return;
+	uint32_t numsteps = j;
+	uint32_t base = atomicAdd(numsteps_counter, numsteps);	 // first entry in the array is a counter
+	if (base + numsteps > max_samples) {
+		return;
+	}
+
+	coords_out += base;
+	s_coord_in += base;
+
+	uint32_t ray_idx = atomicAdd(ray_counter, 1);
+
+	ray_indices_out[ray_idx] = i;
+	rays_out_unnormalized[ray_idx] = ray;
+	numsteps_out[ray_idx * 2 + 0] = numsteps;
+	numsteps_out[ray_idx * 2 + 1] = base;
+
+	Vector3f warped_dir = warp_direction(ray.d);
+	t = startt;
+	j = 0;
+	while (aabb.contains(pos = ray.o + t * ray.d) && j < numsteps) {
+		float dt = calc_dt(t, cone_angle_constant);
+		uint32_t mip = mip_from_dt(dt, pos);
+		if (density_grid_occupied_at(pos, density_grid, mip)) {
+			coords_out(j)->set_with_optional_extra_dims(warp_position(pos, aabb), warped_dir, warp_dt(dt), extra_dims, coords_out.stride_in_bytes);
+			s_coord_in[j] = calc_s(t, cone_angle_constant);
+			++j;
+			t += dt;
+		}
+		else {
+			uint32_t res = NERF_GRIDSIZE() >> mip;
+			t = advance_to_next_voxel(t, cone_angle_constant, pos, ray.d, idir, res);
+		}
+	}
+	if (max_level_rand_training) {
+		max_level_ptr += base;
+		for (j = 0; j < numsteps; ++j) {
+			max_level_ptr[j] = max_level;
+		}
+	}
+}
+
+
+// compute loss for extra rays
+__global__ void compute_extra_ray_loss_kernel_train_nerf(
+	const uint32_t n_rays,
+	BoundingBox aabb,
+	const uint32_t n_rays_total,
+	default_rng_t rng,
+	const uint32_t max_samples_compacted,
+	const uint32_t* __restrict__ rays_counter,
+	float loss_scale,
+	float dist_loss_scale, // distortion loss scale
+	float opac_loss_scale, // opacity loss scale
+	int padded_output_width,
+	const float* __restrict__ envmap_data,
+	float* __restrict__ envmap_gradient,
+	const Vector2i envmap_resolution,
+	ELossType envmap_loss_type,
+	Array3f background_color,
+	EColorSpace color_space,
+	bool train_with_random_bg_color,
+	bool train_in_linear_colors,
+	const uint32_t n_training_images,
+	const TrainingImageMetadata* __restrict__ metadata,
+	const tcnn::network_precision_t* network_output,
+	uint32_t* __restrict__ numsteps_counter,
+	const uint32_t* __restrict__ ray_indices_in,
+	const Ray* __restrict__ rays_in_unnormalized,
+	uint32_t* __restrict__ numsteps_in,
+	PitchedPtr<const NerfCoordinate> coords_in,
+	PitchedPtr<NerfCoordinate> coords_out,
+	float* s_coord_in,	// regularized t, mid point of sample section
+	float* weights_out,	// weight at each sample point
+	float* sum_w,		// cumsum of w
+	float* sum_wm,		// cumsum of w*m
+	tcnn::network_precision_t* dloss_doutput,
+	ELossType loss_type,
+	ELossType depth_loss_type,
+	float* __restrict__ loss_output,
+	bool max_level_rand_training,
+	float* __restrict__ max_level_compacted_ptr,
+	ENerfActivation rgb_activation,
+	ENerfActivation density_activation,
+	bool snap_to_pixel_centers,
+	float* __restrict__ error_map,
+	const float* __restrict__ cdf_x_cond_y,
+	const float* __restrict__ cdf_y,
+	const float* __restrict__ cdf_img,
+	const Vector2i error_map_res,
+	const Vector2i error_map_cdf_res,
+	const float* __restrict__ sharpness_data,
+	Eigen::Vector2i sharpness_resolution,
+	float* __restrict__ sharpness_grid,
+	float* __restrict__ density_grid,
+	const float* __restrict__ mean_density_ptr,
+	const Eigen::Array3f* __restrict__ exposure,
+	Eigen::Array3f* __restrict__ exposure_gradient,
+	float depth_supervision_lambda,
+	float near_distance
+) {
+
+}
 
 __global__ void compute_cam_gradient_train_nerf(
 	const uint32_t n_rays,
@@ -3219,7 +3380,7 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		target_batch_size,
 		ray_counter,
 		LOSS_SCALE,
-		1e-2f,// distortion loss scale
+		1e-3f,// distortion loss scale
 		1e-3f,// opacity loss scale
 		padded_output_width,
 		m_envmap.envmap->params(),
