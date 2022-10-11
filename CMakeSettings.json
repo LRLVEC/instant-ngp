@@ -14,7 +14,7 @@
     },
     {
       "name": "x64-Release",
-      "generator": "Ninja",
+      "generator": "Visual Studio 17 2022 Win64",
       "configurationType": "RelWithDebInfo",
       "buildRoot": "${projectDir}\\build\\mipnerf360\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",

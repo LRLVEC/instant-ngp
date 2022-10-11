@@ -12,6 +12,14 @@
  *  @author Thomas Müller & Alex Evans, NVIDIA
  */
 
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#ifndef __CUDACC__
+#define __CUDACC__
+#include <device_functions.h>
+#include <math_functions.h>
+#endif
+
 #include <neural-graphics-primitives/adam_optimizer.h>
 #include <neural-graphics-primitives/common_device.cuh>
 #include <neural-graphics-primitives/common.h>
@@ -94,7 +102,7 @@ inline __host__ __device__ float calc_dt(float t, float cone_angle) {
 inline __host__ __device__ float calc_s(float t, float cone_angle) {
 	float t0 = STEPSIZE() / cone_angle;
  	if (t <= t0) return t;
-	else return t0 * (__logf(t) - __logf(t0) + 1);
+	else return t0 * (logf(t) - logf(t0) + 1);
 }
 
 struct LossAndGradient {
@@ -1289,11 +1297,10 @@ __global__ void compute_loss_kernel_train_nerf(
 	uint32_t* __restrict__ numsteps_in,
 	PitchedPtr<const NerfCoordinate> coords_in,
 	PitchedPtr<NerfCoordinate> coords_out,
-	float* s_coord_in, // regularized t, mid point of sample section
-	float* s_coord_out, // regularized t, mid point of sample section
-	float* weights_out, // weight at each sample point
-	float* sum_w, // cumsum of w
-	float* sum_wm, // cumsum of w*m
+	float* s_coord_in,	// regularized t, mid point of sample section
+	float* weights_out,	// weight at each sample point
+	float* sum_w,		// cumsum of w
+	float* sum_wm,		// cumsum of w*m
 	tcnn::network_precision_t* dloss_doutput,
 	ELossType loss_type,
 	ELossType depth_loss_type,
@@ -1434,7 +1441,6 @@ __global__ void compute_loss_kernel_train_nerf(
 
 	max_level_compacted_ptr += compacted_base;
 	coords_out += compacted_base;
-	s_coord_out += compacted_base;
 	weights_out += compacted_base;
 	sum_w += compacted_base;
 	sum_wm += compacted_base;
@@ -1488,7 +1494,10 @@ __global__ void compute_loss_kernel_train_nerf(
 	}
 
 	loss_scale /= n_rays;
-	dist_loss_scale /= n_rays;
+	if (i == 499)
+	{
+		printf("%e\t%e\n", loss_scale, dist_loss_scale);
+	}
 
 	const float output_l2_reg = rgb_activation == ENerfActivation::Exponential ? 1e-4f : 0.0f;
 	const float output_l1_reg_density = *mean_density_ptr < NERF_MIN_OPTICAL_THICKNESS() ? 1e-4f : 0.0f;
@@ -1508,12 +1517,11 @@ __global__ void compute_loss_kernel_train_nerf(
 		const float alpha = 1.f - __expf(-density * dt);
 		const float weight = alpha * T;
 		T *= (1.f - alpha);
-		s_coord_out[j] = s_coord_in[j];
 		weights_out[j] = weight;
-		sw += weight;
-		swm += weight * s_coord_in[j];
 		sum_w[j] = sw;
 		sum_wm[j] = swm;
+		sw += weight;
+		swm += weight * s_coord_in[j];
 	}
 	T = 1.f;
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
@@ -1553,9 +1561,14 @@ __global__ void compute_loss_kernel_train_nerf(
 		const float depth_suffix = depth_ray - depth_ray2;
 		const float depth_supervision = depth_loss_gradient * (T * depth - depth_suffix);
 
+		float ddistloss_by_dw = 2 * weight * STEPSIZE() / 3;
+		if (j == 0) ddistloss_by_dw += 2 * (swm - sw * s_coord_in[j]);
+		else ddistloss_by_dw += 2 * (s_coord_in[j] * (sum_w[j - 1] + sum_w[j] - sw) + swm - sum_wm[j - 1] - sum_wm[j]);
+
+
 		float dloss_by_dmlp = density_derivative * (
-			dt * (lg.gradient.matrix().dot((T * rgb - suffix).matrix()) + depth_supervision)
-		);
+			dt * (lg.gradient.matrix().dot((T * rgb - suffix).matrix()) + depth_supervision + dist_loss_scale * ddistloss_by_dw)
+			);
 
 		//static constexpr float mask_supervision_strength = 1.f; // we are already 'leaking' mask information into the nerf via the random bg colors; setting this to eg between 1 and  100 encourages density towards 0 in such regions.
 		//dloss_by_dmlp += (texsamp.w()<0.001f) ? mask_supervision_strength * weight : 0.f;
@@ -1564,8 +1577,6 @@ __global__ void compute_loss_kernel_train_nerf(
 			loss_scale * dloss_by_dmlp +
 			(float(local_network_output[3]) < 0.0f ? -output_l1_reg_density : 0.0f) +
 			(float(local_network_output[3]) > -10.0f && depth < near_distance ? 1e-4f : 0.0f);
-			// todo ===================================
-			;
 
 		*(tcnn::vector_t<tcnn::network_precision_t, 4>*)dloss_doutput = local_dL_doutput;
 
@@ -3072,7 +3083,11 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		float, // coords_compacted
 		float, // coords_gradient
 		float, // max_level_compacted
-		uint32_t // ray_counter
+		uint32_t, // ray_counter
+		float, // regularized t, mid point of sample section
+		float, // weight at each sample point
+		float, // cumsum of w
+		float // cumsum of w*m
 	>(
 		stream, &alloc,
 		counters.rays_per_batch,
@@ -3085,7 +3100,11 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		target_batch_size * floats_per_coord,
 		target_batch_size * floats_per_coord,
 		target_batch_size,
-		1
+		1,
+		max_samples,
+		max_samples,
+		max_samples,
+		max_samples
 	);
 
 	// TODO: C++17 structured binding
@@ -3100,6 +3119,10 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 	float* coords_gradient = std::get<8>(scratch);
 	float* max_level_compacted = std::get<9>(scratch);
 	uint32_t* ray_counter = std::get<10>(scratch);
+	float* s_coord = std::get<11>(scratch);
+	float* weights = std::get<12>(scratch);
+	float* sum_w = std::get<13>(scratch);
+	float* sum_wm = std::get<14>(scratch);
 
 	uint32_t max_inference;
 	if (counters.measured_batch_size_before_compaction == 0) {
@@ -3148,6 +3171,7 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		rays_unnormalized,
 		numsteps,
 		PitchedPtr<NerfCoordinate>((NerfCoordinate*)coords, 1, 0, extra_stride),
+		s_coord, // regularized t, mid point of sample section
 		m_nerf.training.n_images_for_training,
 		m_nerf.training.dataset.metadata_gpu.data(),
 		m_nerf.training.transforms_gpu.data(),
@@ -3186,6 +3210,7 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		target_batch_size,
 		ray_counter,
 		LOSS_SCALE,
+		3e-3f,// distortion loss scale
 		padded_output_width,
 		m_envmap.envmap->params(),
 		envmap_gradient,
@@ -3204,6 +3229,10 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		numsteps,
 		PitchedPtr<const NerfCoordinate>((NerfCoordinate*)coords, 1, 0, extra_stride),
 		PitchedPtr<NerfCoordinate>((NerfCoordinate*)coords_compacted, 1 ,0, extra_stride),
+		s_coord,
+		weights,
+		sum_w,
+		sum_wm,
 		dloss_dmlp_out,
 		m_nerf.training.loss_type,
 		m_nerf.training.depth_loss_type,

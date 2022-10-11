@@ -1707,7 +1707,7 @@ void Testbed::train_and_render(bool skip_rendering) {
 		optimise_mesh_step(1);
 	}
 
-	for(int c0(0);c0<3;++c0)
+	/*for(int c0(0);c0<3;++c0)
 	{
 		for(int c1(0);c1<4;++c1)
 		{
@@ -1715,7 +1715,7 @@ void Testbed::train_and_render(bool skip_rendering) {
 		}
 		printf("\n");
 	}
-	printf("\n");
+	printf("\n");*/
 	
 	apply_camera_smoothing(m_frame_ms.val());
 
