@@ -1279,6 +1279,7 @@ __global__ void compute_loss_kernel_train_nerf(
 	const uint32_t* __restrict__ rays_counter,
 	float loss_scale,
 	float dist_loss_scale, // distortion loss scale
+	float opac_loss_scale, // opacity loss scale
 	int padded_output_width,
 	const float* __restrict__ envmap_data,
 	float* __restrict__ envmap_gradient,
@@ -1523,6 +1524,8 @@ __global__ void compute_loss_kernel_train_nerf(
 		sw += weight;
 		swm += weight * s_coord_in[j];
 	}
+	float opacity = T + 1e-10f;
+	float dopacloss_by_dd = (1 + logf(opacity)) * opacity;
 	T = 1.f;
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
 		if (max_level_rand_training) {
@@ -1566,8 +1569,14 @@ __global__ void compute_loss_kernel_train_nerf(
 		else ddistloss_by_dw += 2 * (s_coord_in[j] * (sum_w[j - 1] + sum_w[j] - sw) + swm - sum_wm[j - 1] - sum_wm[j]);
 
 
+		// dist_loss term should be dist_loss_scale * ddistloss_by_dw * T, but in order to reduce the fog, T is ignored (they are very small behind surfaces)
 		float dloss_by_dmlp = density_derivative * (
-			dt * (lg.gradient.matrix().dot((T * rgb - suffix).matrix()) + depth_supervision + dist_loss_scale * ddistloss_by_dw)
+			dt * (
+				lg.gradient.matrix().dot((T * rgb - suffix).matrix()) +
+				depth_supervision +
+				dist_loss_scale * ddistloss_by_dw +// distortion loss
+				opac_loss_scale * dopacloss_by_dd // opacity loss
+				)
 			);
 
 		//static constexpr float mask_supervision_strength = 1.f; // we are already 'leaking' mask information into the nerf via the random bg colors; setting this to eg between 1 and  100 encourages density towards 0 in such regions.
@@ -3210,7 +3219,8 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		target_batch_size,
 		ray_counter,
 		LOSS_SCALE,
-		3e-3f,// distortion loss scale
+		1e-3f,// distortion loss scale
+		1e-3f,// opacity loss scale
 		padded_output_width,
 		m_envmap.envmap->params(),
 		envmap_gradient,
