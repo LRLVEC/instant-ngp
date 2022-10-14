@@ -328,12 +328,19 @@ public:
 	struct NerfCounters {
 		tcnn::GPUMemory<uint32_t> numsteps_counter; // number of steps each ray took
 		tcnn::GPUMemory<uint32_t> numsteps_counter_compacted; // number of steps each ray took
+		tcnn::GPUMemory<uint32_t> numsteps_counter_extra; // number of steps each extra ray took
+		tcnn::GPUMemory<uint32_t> numsteps_counter_compacted_extra; // number of steps each extra ray took
 		tcnn::GPUMemory<float> loss;
 
 		uint32_t rays_per_batch = 1<<12;
 		uint32_t n_rays_total = 0;
+		uint32_t rays_per_batch_extra = 1<<12;
+		uint32_t n_rays_total_extra = 0;
 		uint32_t measured_batch_size = 0;
 		uint32_t measured_batch_size_before_compaction = 0;
+		uint32_t measured_batch_size_extra = 0;
+		uint32_t measured_batch_size_before_compaction_extra = 0;
+
 
 		void prepare_for_training_steps(cudaStream_t stream);
 		float update_after_training(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
@@ -341,6 +348,7 @@ public:
 
 	void train_nerf(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void train_nerf_step(uint32_t target_batch_size, NerfCounters& counters, cudaStream_t stream);
+	void train_extra_nerf_step(uint32_t target_batch_size, NerfCounters& counters, cudaStream_t stream);
 	void train_sdf(size_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void train_image(size_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void set_train(bool mtrain);
@@ -589,6 +597,7 @@ public:
 			ELossType depth_loss_type = ELossType::L1;
 			bool snap_to_pixel_centers = true;
 			bool train_envmap = false;
+			bool train_extra_ray = false;
 
 			bool optimize_distortion = false;
 			bool optimize_extrinsics = false;

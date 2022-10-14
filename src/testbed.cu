@@ -457,6 +457,8 @@ void Testbed::imgui() {
 		if (m_testbed_mode == ETestbedMode::Nerf) {
 			ImGui::Checkbox("Train envmap", &m_nerf.training.train_envmap);
 			ImGui::SameLine();
+			ImGui::Checkbox("Train extra rays", &m_nerf.training.train_extra_ray);
+			ImGui::SameLine();
 			ImGui::Checkbox("Train extrinsics", &m_nerf.training.optimize_extrinsics);
 			ImGui::SameLine();
 			ImGui::Checkbox("Train exposure", &m_nerf.training.optimize_exposure);
@@ -499,7 +501,8 @@ void Testbed::imgui() {
 			ImGui::Text("Training paused");
 		}
 		if (m_testbed_mode == ETestbedMode::Nerf) {
-			ImGui::Text("Rays/batch: %d, Samples/ray: %.2f, Batch size: %d/%d", m_nerf.training.counters_rgb.rays_per_batch, (float)m_nerf.training.counters_rgb.measured_batch_size / (float)m_nerf.training.counters_rgb.rays_per_batch, m_nerf.training.counters_rgb.measured_batch_size, m_nerf.training.counters_rgb.measured_batch_size_before_compaction);
+			ImGui::Text("Train Rays/batch: %d, Samples/ray: %.2f, Batch size: %d/%d", m_nerf.training.counters_rgb.rays_per_batch, (float)m_nerf.training.counters_rgb.measured_batch_size / (float)m_nerf.training.counters_rgb.rays_per_batch, m_nerf.training.counters_rgb.measured_batch_size, m_nerf.training.counters_rgb.measured_batch_size_before_compaction);
+			ImGui::Text("Extra Rays/batch: %d, Samples/ray: %.2f, Batch size: %d/%d", m_nerf.training.counters_rgb.rays_per_batch_extra, (float)m_nerf.training.counters_rgb.measured_batch_size_extra / (float)m_nerf.training.counters_rgb.rays_per_batch_extra, m_nerf.training.counters_rgb.measured_batch_size_extra, m_nerf.training.counters_rgb.measured_batch_size_before_compaction_extra);
 		}
 		float elapsed_training = std::chrono::duration<float>(std::chrono::steady_clock::now() - m_training_start_time_point).count();
 		ImGui::Text("Steps: %d, Loss: %0.6f (%0.2f dB), Elapsed: %.1fs", m_training_step, m_loss_scalar.ema_val(), linear_to_db(m_loss_scalar.ema_val()), elapsed_training);
