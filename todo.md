@@ -8,3 +8,4 @@
    2. add function compute_extra_ray_loss_kernel_train_nerf -- Done
    3. add function train_extra_nerf_step -- Done
    4. modify fucntion train_nerf -- Done
+7. change 2 optimizer_step calls into 1 in function train_nerf()
