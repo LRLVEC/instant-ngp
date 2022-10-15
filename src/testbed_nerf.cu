@@ -3593,8 +3593,8 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		target_batch_size,
 		ray_counter,
 		LOSS_SCALE,
-		1e-3f,// distortion loss scale
-		1e-3f,// opacity loss scale
+		m_nerf.distortion_loss_scale,// distortion loss scale
+		m_nerf.opacity_loss_scale,// opacity loss scale
 		padded_output_width,
 		m_envmap.envmap->params(),
 		envmap_gradient,
@@ -3838,8 +3838,8 @@ void Testbed::train_extra_nerf_step(uint32_t target_batch_size, Testbed::NerfCou
 		target_batch_size,
 		ray_counter,
 		LOSS_SCALE,
-		5e-3f,// distortion loss scale
-		1e-3f,// opacity loss scale
+		m_nerf.distortion_loss_scale_extra,// distortion loss scale
+		m_nerf.opacity_loss_scale_extra,// opacity loss scale
 		padded_output_width,
 		//m_envmap.envmap->params(),
 		//envmap_gradient,

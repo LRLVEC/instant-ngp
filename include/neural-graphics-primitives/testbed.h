@@ -597,7 +597,7 @@ public:
 			ELossType depth_loss_type = ELossType::L1;
 			bool snap_to_pixel_centers = true;
 			bool train_envmap = false;
-			bool train_extra_ray = false;
+			bool train_extra_ray = true;
 
 			bool optimize_distortion = false;
 			bool optimize_extrinsics = false;
@@ -661,6 +661,10 @@ public:
 		float sharpen = 0.f;
 
 		float cone_angle_constant = 1.f/256.f;
+		float distortion_loss_scale = 5e-3f;
+		float opacity_loss_scale = 1e-3f;
+		float distortion_loss_scale_extra = 1e-3f;
+		float opacity_loss_scale_extra = 1e-3f;
 
 		bool visualize_cameras = false;
 		bool render_with_lens_distortion = false;
