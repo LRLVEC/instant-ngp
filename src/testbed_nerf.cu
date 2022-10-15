@@ -110,7 +110,7 @@ inline __device__ Ray generate_random_ray(default_rng_t& rng, BoundingBox aabb)
 	Ray ray;
 	float radius = 1.5f * aabb.diag().norm() / 2;
 	ray.o = aabb.center() + radius * random_dir(rng);
-	ray.d = (aabb.min + aabb.diag() * random_val(rng) - ray.o).normalized();
+	ray.d = (aabb.min + aabb.diag().cwiseProduct(random_val_3d(rng)) - ray.o).normalized();
 	return ray;
 }
 
