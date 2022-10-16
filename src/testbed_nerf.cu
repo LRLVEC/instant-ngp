@@ -1583,7 +1583,7 @@ __global__ void compute_loss_kernel_train_nerf(
 			dt * (
 				lg.gradient.matrix().dot((T * rgb - suffix).matrix()) +
 				depth_supervision +
-				dist_loss_scale * ddistloss_by_dw +// distortion loss
+				dist_loss_scale * ddistloss_by_dw * T +// distortion loss
 				opac_loss_scale * dopacloss_by_dd // opacity loss
 				)
 			);
@@ -1951,7 +1951,7 @@ __global__ void compute_extra_ray_loss_kernel_train_nerf(
 			dt * (
 				//lg.gradient.matrix().dot((T * rgb - suffix).matrix()) + // remove because lg == 0
 				//depth_supervision + // remove because no supervision
-				dist_loss_scale * ddistloss_by_dw +// distortion loss
+				dist_loss_scale * ddistloss_by_dw * T +// distortion loss
 				opac_loss_scale * dopacloss_by_dd // opacity loss
 				)
 			);

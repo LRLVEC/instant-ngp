@@ -352,4 +352,4 @@ if __name__ == "__main__":
 			write_image(f"tmp/{i:04d}.jpg", np.clip(frame * 2**args.exposure, 0.0, 1.0), quality=100)
 
 		os.system(f"ffmpeg -y -framerate {args.video_fps} -i tmp/%04d.jpg -c:v libx264 -pix_fmt yuv420p {args.video_output}")
-		shutil.rmtree("tmp")
+		# shutil.rmtree("tmp")

@@ -598,6 +598,7 @@ public:
 			bool snap_to_pixel_centers = true;
 			bool train_envmap = false;
 			bool train_extra_ray = true;
+			float extra_ray_batch_ratio = 0.5;
 
 			bool optimize_distortion = false;
 			bool optimize_extrinsics = false;
@@ -661,9 +662,9 @@ public:
 		float sharpen = 0.f;
 
 		float cone_angle_constant = 1.f/256.f;
-		float distortion_loss_scale = 1e-3f;
+		float distortion_loss_scale = 1e-2f;
 		float opacity_loss_scale = 1e-3f;
-		float distortion_loss_scale_extra = 1e-3f;
+		float distortion_loss_scale_extra = 1e-2f;
 		float opacity_loss_scale_extra = 1e-3f;
 
 		bool visualize_cameras = false;

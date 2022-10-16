@@ -485,6 +485,7 @@ void Testbed::imgui() {
 		ImGui::SameLine();
 		ImGui::DragInt("Seed", (int*)&m_seed, 1.0f, 0, std::numeric_limits<int>::max());
 		ImGui::SliderInt("Batch size", (int*)&m_training_batch_size, 1 << 12, 1 << 22, "%d", ImGuiSliderFlags_Logarithmic);
+		ImGui::SliderFloat("Extra rays batch ratio", &m_nerf.training.extra_ray_batch_ratio, 0.f, 1.0f, "%.3f");
 		m_training_batch_size = next_multiple(m_training_batch_size, batch_size_granularity);
 
 		if (m_train) {
