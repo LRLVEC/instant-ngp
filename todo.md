@@ -13,7 +13,8 @@
    1. render full images and video for test
    2. calculate psnr
 8. change 2 optimizer_step calls into 1 in function train_nerf()
-9.  change opacity loss to see effects
+9. change opacity loss to see effects
+10. pixel streaming on multi-gpu
 
 # Ideas
 1. add unbounded scene encoding as mipnerf360 for ngp?
