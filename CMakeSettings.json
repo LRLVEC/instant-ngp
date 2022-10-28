@@ -16,7 +16,7 @@
       "name": "x64-Release",
       "generator": "Visual Studio 17 2022 Win64",
       "configurationType": "RelWithDebInfo",
-      "buildRoot": "${projectDir}\\build\\mipnerf360\\${name}",
+      "buildRoot": "${projectDir}\\build\\multigpu\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
       "cmakeExecutable": "D:/programs/CMake/bin/cmake.exe",
       "cmakeCommandArgs": "",

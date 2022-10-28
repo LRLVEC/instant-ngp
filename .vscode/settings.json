@@ -1,4 +1,4 @@
 {
     "cmake.generator": "Ninja",
-	"cmake.buildDirectory":"${workspaceFolder}/build/mipnerf360/ninja"
+	"cmake.buildDirectory":"${workspaceFolder}/build/multigpu/ninja"
 }
