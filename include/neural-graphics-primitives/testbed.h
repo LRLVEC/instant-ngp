@@ -333,23 +333,26 @@ public:
 		tcnn::GPUMemory<uint32_t> numsteps_counter_compacted_extra; // number of steps each extra ray took
 		tcnn::GPUMemory<float> loss;
 
-		uint32_t rays_per_batch = 1<<12;
+		uint32_t rays_per_batch = 1<<14;
+		uint32_t patches_per_batch = 0;
 		uint32_t n_rays_total = 0;
 		uint32_t rays_per_batch_extra = 1<<12;
 		uint32_t n_rays_total_extra = 0;
+		uint32_t n_patches_total = 0;
 		uint32_t measured_batch_size = 0;
 		uint32_t measured_batch_size_before_compaction = 0;
 		uint32_t measured_batch_size_extra = 0;
 		uint32_t measured_batch_size_before_compaction_extra = 0;
 
 
-		void prepare_for_training_steps(cudaStream_t stream);
+		void prepare_for_training_steps(cudaStream_t stream, bool sample_patches, uint32_t patch_size);
 		float update_after_training(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	};
 
 	void train_nerf(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void train_nerf_step(uint32_t target_batch_size, NerfCounters& counters, cudaStream_t stream);
 	void train_extra_nerf_step(uint32_t target_batch_size, NerfCounters& counters, cudaStream_t stream);
+	void train_regnerf_step(uint32_t target_batch_size,NerfCounters& counters, uint32_t patch_size, cudaStream_t stream);
 	void train_sdf(size_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void train_image(size_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void set_train(bool mtrain);
@@ -617,6 +620,10 @@ public:
 			uint32_t n_steps_between_error_map_updates = 128;
 			uint32_t n_steps_since_error_map_update = 0;
 			uint32_t n_rays_since_error_map_update = 0;
+
+			bool sample_patches = false;
+			int log_patch_size = 2;
+			int patch_size = 4;
 
 			float near_distance = 0.2f;
 			float density_grid_decay = 0.95f;
