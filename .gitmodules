@@ -18,7 +18,8 @@
 	url = https://github.com/NVlabs/tiny-cuda-nn
 [submodule "dependencies/imgui"]
 	path = dependencies/imgui
-	url = https://github.com/ocornut/imgui.git
+	url = https://github.com/LRLVEC/imgui.git
+	branch = ngp
 [submodule "dependencies/dlss"]
 	path = dependencies/dlss
 	url = https://github.com/NVIDIA/DLSS
