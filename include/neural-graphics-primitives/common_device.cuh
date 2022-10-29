@@ -28,7 +28,7 @@ NGP_NAMESPACE_BEGIN
 using precision_t = tcnn::network_precision_t;
 
 
-inline __host__ __device__ float srgb_to_linear(float srgb) {
+inline NGP_HOST_DEVICE float srgb_to_linear(float srgb) {
 	if (srgb <= 0.04045f) {
 		return srgb / 12.92f;
 	} else {
@@ -36,11 +36,11 @@ inline __host__ __device__ float srgb_to_linear(float srgb) {
 	}
 }
 
-inline __host__ __device__ Eigen::Array3f srgb_to_linear(const Eigen::Array3f& x) {
+inline NGP_HOST_DEVICE Eigen::Array3f srgb_to_linear(const Eigen::Array3f& x) {
 	return {srgb_to_linear(x.x()), srgb_to_linear(x.y()), (srgb_to_linear(x.z()))};
 }
 
-inline __host__ __device__ float srgb_to_linear_derivative(float srgb) {
+inline NGP_HOST_DEVICE float srgb_to_linear_derivative(float srgb) {
 	if (srgb <= 0.04045f) {
 		return 1.0f / 12.92f;
 	} else {
@@ -48,11 +48,11 @@ inline __host__ __device__ float srgb_to_linear_derivative(float srgb) {
 	}
 }
 
-inline __host__ __device__ Eigen::Array3f srgb_to_linear_derivative(const Eigen::Array3f& x) {
+inline NGP_HOST_DEVICE Eigen::Array3f srgb_to_linear_derivative(const Eigen::Array3f& x) {
 	return {srgb_to_linear_derivative(x.x()), srgb_to_linear_derivative(x.y()), (srgb_to_linear_derivative(x.z()))};
 }
 
-inline __host__ __device__ float linear_to_srgb(float linear) {
+inline NGP_HOST_DEVICE float linear_to_srgb(float linear) {
 	if (linear < 0.0031308f) {
 		return 12.92f * linear;
 	} else {
@@ -60,11 +60,11 @@ inline __host__ __device__ float linear_to_srgb(float linear) {
 	}
 }
 
-inline __host__ __device__ Eigen::Array3f linear_to_srgb(const Eigen::Array3f& x) {
+inline NGP_HOST_DEVICE Eigen::Array3f linear_to_srgb(const Eigen::Array3f& x) {
 	return {linear_to_srgb(x.x()), linear_to_srgb(x.y()), (linear_to_srgb(x.z()))};
 }
 
-inline __host__ __device__ float linear_to_srgb_derivative(float linear) {
+inline NGP_HOST_DEVICE float linear_to_srgb_derivative(float linear) {
 	if (linear < 0.0031308f) {
 		return 12.92f;
 	} else {
@@ -72,12 +72,12 @@ inline __host__ __device__ float linear_to_srgb_derivative(float linear) {
 	}
 }
 
-inline __host__ __device__ Eigen::Array3f linear_to_srgb_derivative(const Eigen::Array3f& x) {
+inline NGP_HOST_DEVICE Eigen::Array3f linear_to_srgb_derivative(const Eigen::Array3f& x) {
 	return {linear_to_srgb_derivative(x.x()), linear_to_srgb_derivative(x.y()), (linear_to_srgb_derivative(x.z()))};
 }
 
 template <uint32_t N_DIMS, typename T>
-__host__ __device__ Eigen::Matrix<float, N_DIMS, 1> read_image(const T* __restrict__ data, const Eigen::Vector2i& resolution, const Eigen::Vector2f& pos) {
+NGP_HOST_DEVICE Eigen::Matrix<float, N_DIMS, 1> read_image(const T* __restrict__ data, const Eigen::Vector2i& resolution, const Eigen::Vector2f& pos) {
 	const Eigen::Vector2f pos_float = Eigen::Vector2f{pos.x() * (float)(resolution.x()-1), pos.y() * (float)(resolution.y()-1)};
 	const Eigen::Vector2i texel = pos_float.cast<int>();
 
@@ -143,7 +143,7 @@ __device__ void deposit_image_gradient(const Eigen::Matrix<float, N_DIMS, 1>& va
 }
 
 template <typename T>
-__device__ __host__ inline void apply_camera_distortion(const T* extra_params, const T u, const T v, T* du, T* dv) {
+__device__ __host__ inline void apply_opencv_lens_distortion(const T* extra_params, const T u, const T v, T* du, T* dv) {
 	const T k1 = extra_params[0];
 	const T k2 = extra_params[1];
 	const T p1 = extra_params[2];
@@ -159,7 +159,7 @@ __device__ __host__ inline void apply_camera_distortion(const T* extra_params, c
 }
 
 template <typename T>
-__device__ __host__ inline void iterative_camera_undistortion(const T* params, T* u, T* v) {
+__device__ __host__ inline void iterative_opencv_lens_undistortion(const T* params, T* u, T* v) {
 	// Parameters for Newton iteration using numerical differentiation with
 	// central differences, 100 iterations should be enough even for complex
 	// camera models with higher order terms.
@@ -179,11 +179,11 @@ __device__ __host__ inline void iterative_camera_undistortion(const T* params, T
 	for (uint32_t i = 0; i < kNumIterations; ++i) {
 		const float step0 = std::max(std::numeric_limits<float>::epsilon(), std::abs(kRelStepSize * x(0)));
 		const float step1 = std::max(std::numeric_limits<float>::epsilon(), std::abs(kRelStepSize * x(1)));
-		apply_camera_distortion(params, x(0), x(1), &dx(0), &dx(1));
-		apply_camera_distortion(params, x(0) - step0, x(1), &dx_0b(0), &dx_0b(1));
-		apply_camera_distortion(params, x(0) + step0, x(1), &dx_0f(0), &dx_0f(1));
-		apply_camera_distortion(params, x(0), x(1) - step1, &dx_1b(0), &dx_1b(1));
-		apply_camera_distortion(params, x(0), x(1) + step1, &dx_1f(0), &dx_1f(1));
+		apply_opencv_lens_distortion(params, x(0), x(1), &dx(0), &dx(1));
+		apply_opencv_lens_distortion(params, x(0) - step0, x(1), &dx_0b(0), &dx_0b(1));
+		apply_opencv_lens_distortion(params, x(0) + step0, x(1), &dx_0f(0), &dx_0f(1));
+		apply_opencv_lens_distortion(params, x(0), x(1) - step1, &dx_1b(0), &dx_1b(1));
+		apply_opencv_lens_distortion(params, x(0), x(1) + step1, &dx_1f(0), &dx_1f(1));
 		J(0, 0) = 1 + (dx_0f(0) - dx_0b(0)) / (2 * step0);
 		J(0, 1) = (dx_1f(0) - dx_1b(0)) / (2 * step1);
 		J(1, 0) = (dx_0f(1) - dx_0b(1)) / (2 * step0);
@@ -199,15 +199,13 @@ __device__ __host__ inline void iterative_camera_undistortion(const T* params, T
 	*v = x(1);
 }
 
-inline __host__ __device__ Ray pixel_to_ray_pinhole(
+inline NGP_HOST_DEVICE Ray pixel_to_ray_pinhole(
 	uint32_t spp,
 	const Eigen::Vector2i& pixel,
 	const Eigen::Vector2i& resolution,
 	const Eigen::Vector2f& focal_length,
 	const Eigen::Matrix<float, 3, 4>& camera_matrix,
-	const Eigen::Vector2f& screen_center,
-	float focus_z = 1.0f,
-	float dof = 0.0f
+	const Eigen::Vector2f& screen_center
 ) {
 	const Eigen::Vector2f uv = pixel.cast<float>().cwiseQuotient(resolution.cast<float>());
 
@@ -223,7 +221,7 @@ inline __host__ __device__ Ray pixel_to_ray_pinhole(
 	return {origin, dir};
 }
 
-inline __host__ __device__ Eigen::Matrix<float, 3, 4> get_xform_given_rolling_shutter(const TrainingXForm& training_xform, const Eigen::Vector4f& rolling_shutter, const Eigen::Vector2f& uv, float motionblur_time) {
+inline NGP_HOST_DEVICE Eigen::Matrix<float, 3, 4> get_xform_given_rolling_shutter(const TrainingXForm& training_xform, const Eigen::Vector4f& rolling_shutter, const Eigen::Vector2f& uv, float motionblur_time) {
 	float pixel_t = rolling_shutter.x() + rolling_shutter.y() * uv.x() + rolling_shutter.z() * uv.y() + rolling_shutter.w() * motionblur_time;
 
 	Eigen::Vector3f pos = training_xform.start.col(3) + (training_xform.end.col(3) - training_xform.start.col(3)) * pixel_t;
@@ -235,7 +233,7 @@ inline __host__ __device__ Eigen::Matrix<float, 3, 4> get_xform_given_rolling_sh
 	return rv;
 }
 
-inline __host__ __device__ Eigen::Vector3f f_theta_undistortion(const Eigen::Vector2f& uv, const float* params, const Eigen::Vector3f& error_direction) {
+inline NGP_HOST_DEVICE Eigen::Vector3f f_theta_undistortion(const Eigen::Vector2f& uv, const float* params, const Eigen::Vector3f& error_direction) {
 	// we take f_theta intrinsics to be: r0, r1, r2, r3, resx, resy; we rescale to whatever res the intrinsics specify.
 	float xpix = uv.x() * params[5];
 	float ypix = uv.y() * params[6];
@@ -250,16 +248,16 @@ inline __host__ __device__ Eigen::Vector3f f_theta_undistortion(const Eigen::Vec
 	return { sin_alpha * xpix, sin_alpha * ypix, cos_alpha };
 }
 
-inline __host__ __device__ Eigen::Vector3f latlong_to_dir(const Eigen::Vector2f& uv) {
-	float theta=(uv.y()-0.5f) * PI();
-	float phi = (uv.x()-0.5f) * (PI()*2.f);
-	float sp,cp,st,ct;
+inline NGP_HOST_DEVICE Eigen::Vector3f latlong_to_dir(const Eigen::Vector2f& uv) {
+	float theta = (uv.y() - 0.5f) * PI();
+	float phi = (uv.x() - 0.5f) * PI() * 2.0f;
+	float sp, cp, st, ct;
 	sincosf(theta, &st, &ct);
 	sincosf(phi, &sp, &cp);
-	return { sp * ct , st, cp * ct };
+	return {sp * ct, st, cp * ct};
 }
 
-inline __host__ __device__ Ray pixel_to_ray(
+inline NGP_HOST_DEVICE Ray pixel_to_ray(
 	uint32_t spp,
 	const Eigen::Vector2i& pixel,
 	const Eigen::Vector2i& resolution,
@@ -269,21 +267,21 @@ inline __host__ __device__ Ray pixel_to_ray(
 	const Eigen::Vector3f& parallax_shift,
 	bool snap_to_pixel_centers = false,
 	float focus_z = 1.0f,
-	float dof = 0.0f,
-	const CameraDistortion& camera_distortion = {},
-	const float* __restrict__ distortion_data = nullptr,
-	const Eigen::Vector2i distortion_resolution = Eigen::Vector2i::Zero()
+	float aperture_size = 0.0f,
+	const Lens& lens = {},
+	const float* __restrict__ distortion_grid = nullptr,
+	const Eigen::Vector2i distortion_grid_resolution = Eigen::Vector2i::Zero()
 ) {
 	Eigen::Vector2f offset = ld_random_pixel_offset(snap_to_pixel_centers ? 0 : spp);
 	Eigen::Vector2f uv = (pixel.cast<float>() + offset).cwiseQuotient(resolution.cast<float>());
 
 	Eigen::Vector3f dir;
-	if (camera_distortion.mode == ECameraDistortionMode::FTheta) {
-		dir = f_theta_undistortion(uv - screen_center, camera_distortion.params, {1000.f, 0.f, 0.f});
+	if (lens.mode == ELensMode::FTheta) {
+		dir = f_theta_undistortion(uv - screen_center, lens.params, {1000.f, 0.f, 0.f});
 		if (dir.x() == 1000.f) {
 			return {{1000.f, 0.f, 0.f}, {0.f, 0.f, 1.f}}; // return a point outside the aabb so the pixel is not rendered
 		}
-	} else if (camera_distortion.mode == ECameraDistortionMode::LatLong) {
+	} else if (lens.mode == ELensMode::LatLong) {
 		dir = latlong_to_dir(uv);
 	} else {
 		dir = {
@@ -291,39 +289,39 @@ inline __host__ __device__ Ray pixel_to_ray(
 			(uv.y() - screen_center.y()) * (float)resolution.y() / focal_length.y(),
 			1.0f
 		};
-		if (camera_distortion.mode == ECameraDistortionMode::Iterative) {
-			iterative_camera_undistortion(camera_distortion.params, &dir.x(), &dir.y());
+		if (lens.mode == ELensMode::OpenCV) {
+			iterative_opencv_lens_undistortion(lens.params, &dir.x(), &dir.y());
 		}
 	}
-	if (distortion_data) {
-		dir.head<2>() += read_image<2>(distortion_data, distortion_resolution, uv);
+	if (distortion_grid) {
+		dir.head<2>() += read_image<2>(distortion_grid, distortion_grid_resolution, uv);
 	}
 
 	Eigen::Vector3f head_pos = {parallax_shift.x(), parallax_shift.y(), 0.f};
-	dir -= head_pos / parallax_shift.z(); // we could use focus_z here in the denominator. for now, we pack m_scale in here.
+	dir -= head_pos * parallax_shift.z(); // we could use focus_z here in the denominator. for now, we pack m_scale in here.
 	dir = camera_matrix.block<3, 3>(0, 0) * dir;
 
 	Eigen::Vector3f origin = camera_matrix.block<3, 3>(0, 0) * head_pos + camera_matrix.col(3);
-	if (dof == 0.0f) {
+	if (aperture_size == 0.0f) {
 		return {origin, dir};
 	}
 
 	Eigen::Vector3f lookat = origin + dir * focus_z;
-	Eigen::Vector2f blur = dof * square2disk_shirley(ld_random_val_2d(spp, (uint32_t)pixel.x() * 19349663 + (uint32_t)pixel.y() * 96925573) * 2.0f - Eigen::Vector2f::Ones());
+	Eigen::Vector2f blur = aperture_size * square2disk_shirley(ld_random_val_2d(spp, (uint32_t)pixel.x() * 19349663 + (uint32_t)pixel.y() * 96925573) * 2.0f - Eigen::Vector2f::Ones());
 	origin += camera_matrix.block<3, 2>(0, 0) * blur;
 	dir = (lookat - origin) / focus_z;
 
 	return {origin, dir};
 }
 
-inline __host__ __device__ Eigen::Vector2f pos_to_pixel(
+inline NGP_HOST_DEVICE Eigen::Vector2f pos_to_pixel(
 	const Eigen::Vector3f& pos,
 	const Eigen::Vector2i& resolution,
 	const Eigen::Vector2f& focal_length,
 	const Eigen::Matrix<float, 3, 4>& camera_matrix,
 	const Eigen::Vector2f& screen_center,
 	const Eigen::Vector3f& parallax_shift,
-	const CameraDistortion& camera_distortion = {}
+	const Lens& lens = {}
 ) {
 	// Express ray in terms of camera frame
 	Eigen::Vector3f head_pos = {parallax_shift.x(), parallax_shift.y(), 0.f};
@@ -332,16 +330,16 @@ inline __host__ __device__ Eigen::Vector2f pos_to_pixel(
 	Eigen::Vector3f dir = pos - origin;
 	dir = camera_matrix.block<3, 3>(0, 0).inverse() * dir;
 	dir /= dir.z();
-	dir += head_pos / parallax_shift.z();
+	dir += head_pos * parallax_shift.z();
 
-	if (camera_distortion.mode == ECameraDistortionMode::Iterative) {
+	if (lens.mode == ELensMode::OpenCV) {
 		float du, dv;
-		apply_camera_distortion(camera_distortion.params, dir.x(), dir.y(), &du, &dv);
+		apply_opencv_lens_distortion(lens.params, dir.x(), dir.y(), &du, &dv);
 		dir.x() += du;
 		dir.y() += dv;
-	} else if (camera_distortion.mode == ECameraDistortionMode::FTheta) {
+	} else if (lens.mode == ELensMode::FTheta) {
 		assert(false);
-	}  else if (camera_distortion.mode == ECameraDistortionMode::LatLong) {
+	}  else if (lens.mode == ELensMode::LatLong) {
 		assert(false);
 	}
 
@@ -351,7 +349,7 @@ inline __host__ __device__ Eigen::Vector2f pos_to_pixel(
 	};
 }
 
-inline __host__ __device__ Eigen::Vector2f motion_vector_3d(
+inline NGP_HOST_DEVICE Eigen::Vector2f motion_vector_3d(
 	const uint32_t sample_index,
 	const Eigen::Vector2i& pixel,
 	const Eigen::Vector2i& resolution,
@@ -362,7 +360,7 @@ inline __host__ __device__ Eigen::Vector2f motion_vector_3d(
 	const Eigen::Vector3f& parallax_shift,
 	const bool snap_to_pixel_centers,
 	const float depth,
-	const CameraDistortion& camera_distortion = {}
+	const Lens& lens = {}
 ) {
 	Ray ray = pixel_to_ray(
 		sample_index,
@@ -375,7 +373,7 @@ inline __host__ __device__ Eigen::Vector2f motion_vector_3d(
 		snap_to_pixel_centers,
 		1.0f,
 		0.0f,
-		camera_distortion,
+		lens,
 		nullptr,
 		Eigen::Vector2i::Zero()
 	);
@@ -387,13 +385,13 @@ inline __host__ __device__ Eigen::Vector2f motion_vector_3d(
 		prev_camera,
 		screen_center,
 		parallax_shift,
-		camera_distortion
+		lens
 	);
 
 	return prev_pixel - (pixel.cast<float>() + ld_random_pixel_offset(sample_index));
 }
 
-inline __host__ __device__ Eigen::Vector2f pixel_to_image_uv(
+inline NGP_HOST_DEVICE Eigen::Vector2f pixel_to_image_uv(
 	const uint32_t sample_index,
 	const Eigen::Vector2i& pixel,
 	const Eigen::Vector2i& resolution,
@@ -415,7 +413,7 @@ inline __host__ __device__ Eigen::Vector2f pixel_to_image_uv(
 	};
 }
 
-inline __host__ __device__ Eigen::Vector2f image_uv_to_pixel(
+inline NGP_HOST_DEVICE Eigen::Vector2f image_uv_to_pixel(
 	const Eigen::Vector2f& uv,
 	const Eigen::Vector2i& resolution,
 	const Eigen::Vector2i& image_resolution,
@@ -434,7 +432,7 @@ inline __host__ __device__ Eigen::Vector2f image_uv_to_pixel(
 	};
 }
 
-inline __host__ __device__ Eigen::Vector2f motion_vector_2d(
+inline NGP_HOST_DEVICE Eigen::Vector2f motion_vector_2d(
 	const uint32_t sample_index,
 	const Eigen::Vector2i& pixel,
 	const Eigen::Vector2i& resolution,
@@ -469,74 +467,94 @@ inline __host__ __device__ Eigen::Vector2f motion_vector_2d(
 	return prev_pixel - (pixel.cast<float>() + ld_random_pixel_offset(sample_index));
 }
 
-inline __host__ __device__ float fov_to_focal_length(int resolution, float degrees) {
+inline NGP_HOST_DEVICE float fov_to_focal_length(int resolution, float degrees) {
 	return 0.5f * (float)resolution / tanf(0.5f * degrees*(float)PI()/180);
 }
 
-inline __host__ __device__ Eigen::Vector2f fov_to_focal_length(const Eigen::Vector2i& resolution, const Eigen::Vector2f& degrees) {
+inline NGP_HOST_DEVICE Eigen::Vector2f fov_to_focal_length(const Eigen::Vector2i& resolution, const Eigen::Vector2f& degrees) {
 	return 0.5f * resolution.cast<float>().cwiseQuotient((0.5f * degrees * (float)PI()/180).array().tan().matrix());
 }
 
-inline __host__ __device__ float focal_length_to_fov(int resolution, float focal_length) {
+inline NGP_HOST_DEVICE float focal_length_to_fov(int resolution, float focal_length) {
 	return 2.f * 180.f / PI() * atanf(float(resolution)/(focal_length*2.f));
 }
 
-inline __host__ __device__ Eigen::Vector2f focal_length_to_fov(const Eigen::Vector2i& resolution, const Eigen::Vector2f& focal_length) {
+inline NGP_HOST_DEVICE Eigen::Vector2f focal_length_to_fov(const Eigen::Vector2i& resolution, const Eigen::Vector2f& focal_length) {
 	return 2.f * 180.f / PI() * resolution.cast<float>().cwiseQuotient(focal_length*2).array().atan().matrix();
 }
 
-inline __host__ __device__ float4 to_float4(const Eigen::Array4f& x) {
+inline NGP_HOST_DEVICE float4 to_float4(const Eigen::Array4f& x) {
 	return {x.x(), x.y(), x.z(), x.w()};
 }
 
-inline __host__ __device__ float4 to_float4(const Eigen::Vector4f& x) {
+inline NGP_HOST_DEVICE float4 to_float4(const Eigen::Vector4f& x) {
 	return {x.x(), x.y(), x.z(), x.w()};
 }
 
-inline __host__ __device__ float3 to_float3(const Eigen::Array3f& x) {
+inline NGP_HOST_DEVICE float3 to_float3(const Eigen::Array3f& x) {
 	return {x.x(), x.y(), x.z()};
 }
 
-inline __host__ __device__ float3 to_float3(const Eigen::Vector3f& x) {
+inline NGP_HOST_DEVICE float3 to_float3(const Eigen::Vector3f& x) {
 	return {x.x(), x.y(), x.z()};
 }
 
-inline __host__ __device__ float2 to_float2(const Eigen::Array2f& x) {
+inline NGP_HOST_DEVICE float2 to_float2(const Eigen::Array2f& x) {
 	return {x.x(), x.y()};
 }
 
-inline __host__ __device__ float2 to_float2(const Eigen::Vector2f& x) {
+inline NGP_HOST_DEVICE float2 to_float2(const Eigen::Vector2f& x) {
 	return {x.x(), x.y()};
 }
 
-inline __host__ __device__ Eigen::Array4f to_array4(const float4& x) {
+inline NGP_HOST_DEVICE Eigen::Array4f to_array4(const float4& x) {
 	return {x.x, x.y, x.z, x.w};
 }
 
-inline __host__ __device__ Eigen::Vector4f to_vec4(const float4& x) {
+inline NGP_HOST_DEVICE Eigen::Vector4f to_vec4(const float4& x) {
 	return {x.x, x.y, x.z, x.w};
 }
 
-inline __host__ __device__ Eigen::Array3f to_array3(const float3& x) {
+inline NGP_HOST_DEVICE Eigen::Array3f to_array3(const float3& x) {
 	return {x.x, x.y, x.z};
 }
 
-inline __host__ __device__ Eigen::Vector3f to_vec3(const float3& x) {
+inline NGP_HOST_DEVICE Eigen::Vector3f to_vec3(const float3& x) {
 	return {x.x, x.y, x.z};
 }
 
-inline __host__ __device__ Eigen::Array2f to_array2(const float2& x) {
+inline NGP_HOST_DEVICE Eigen::Array2f to_array2(const float2& x) {
 	return {x.x, x.y};
 }
 
-inline __host__ __device__ Eigen::Vector2f to_vec2(const float2& x) {
+inline NGP_HOST_DEVICE Eigen::Vector2f to_vec2(const float2& x) {
 	return {x.x, x.y};
 }
 
-inline __host__ __device__ Eigen::Vector3f faceforward(const Eigen::Vector3f& n, const Eigen::Vector3f& i, const Eigen::Vector3f& nref) {
+inline NGP_HOST_DEVICE Eigen::Vector3f faceforward(const Eigen::Vector3f& n, const Eigen::Vector3f& i, const Eigen::Vector3f& nref) {
 	return n * copysignf(1.0f, i.dot(nref));
 }
 
+inline NGP_HOST_DEVICE void apply_quilting(uint32_t* x, uint32_t* y, const Eigen::Vector2i& resolution, Eigen::Vector3f& parallax_shift, const Eigen::Vector2i& quilting_dims) {
+	float resx = float(resolution.x()) / quilting_dims.x();
+	float resy = float(resolution.y()) / quilting_dims.y();
+	int panelx = (int)floorf(*x/resx);
+	int panely = (int)floorf(*y/resy);
+	*x = (*x - panelx * resx);
+	*y = (*y - panely * resy);
+	int idx = panelx + quilting_dims.x() * panely;
+
+	if (quilting_dims == Eigen::Vector2i{2, 1}) {
+		// Likely VR: parallax_shift.x() is the IPD in this case. The following code centers the camera matrix between both eyes.
+		parallax_shift.x() = idx ? (-0.5f * parallax_shift.x()) : (0.5f * parallax_shift.x());
+	} else {
+		// Likely HoloPlay lenticular display: in this case, `parallax_shift.z()` is the inverse height of the head above the display.
+		// The following code computes the x-offset of views as a function of this.
+		const float max_parallax_angle = 17.5f; // suggested value in https://docs.lookingglassfactory.com/keyconcepts/camera
+		float parallax_angle = max_parallax_angle * PI() / 180.f * ((idx+0.5f)*2.f / float(quilting_dims.y() * quilting_dims.x()) - 1.f);
+		parallax_shift.x() = atanf(parallax_angle) / parallax_shift.z();
+	}
+}
 
 template <typename T>
 __global__ void from_rgba32(const uint64_t num_pixels, const uint8_t* __restrict__ pixels, T* __restrict__ out, bool white_2_transparent = false, bool black_2_transparent = false, uint32_t mask_color = 0) {
@@ -568,8 +586,9 @@ __global__ void from_rgba32(const uint64_t num_pixels, const uint8_t* __restrict
 	*((tcnn::vector_t<T, 4>*)&out[i*4]) = rgba_out;
 }
 
+
 // Foley & van Dam p593 / http://en.wikipedia.org/wiki/HSL_and_HSV
-inline __host__ __device__ Eigen::Array3f hsv_to_rgb(const Eigen::Array3f& hsv) {
+inline NGP_HOST_DEVICE Eigen::Array3f hsv_to_rgb(const Eigen::Array3f& hsv) {
 	float h = hsv.x(), s = hsv.y(), v = hsv.z();
 	if (s == 0.0f) {
 		return Eigen::Array3f::Constant(v);
@@ -592,7 +611,7 @@ inline __host__ __device__ Eigen::Array3f hsv_to_rgb(const Eigen::Array3f& hsv) 
 	}
 }
 
-inline __host__ __device__ Eigen::Array3f to_rgb(const Eigen::Vector2f& dir) {
+inline NGP_HOST_DEVICE Eigen::Array3f to_rgb(const Eigen::Vector2f& dir) {
 	return hsv_to_rgb({atan2f(dir.y(), dir.x()) / (2.0f * PI()) + 0.5f, 1.0f, dir.norm()});
 }
 

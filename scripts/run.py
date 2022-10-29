@@ -44,8 +44,9 @@ def parse_args():
 	parser.add_argument("--screenshot_dir", default="", help="Which directory to output screenshots to.")
 	parser.add_argument("--screenshot_spp", type=int, default=16, help="Number of samples per pixel in screenshots.")
 
-	parser.add_argument("--video_camera_path", default="", help="The camera path to render.")
+	parser.add_argument("--video_camera_path", default="", help="The camera path to render, e.g., base_cam.json.")
 	parser.add_argument("--video_camera_smoothing", action="store_true", help="Applies additional smoothing to the camera trajectory with the caveat that the endpoint of the camera path may not be reached.")
+	parser.add_argument("--video_loop_animation", action="store_true", help="Connect the last and first keyframes in a continuous loop.")
 	parser.add_argument("--video_fps", type=int, default=60, help="Number of frames per second.")
 	parser.add_argument("--video_n_seconds", type=int, default=1, help="Number of seconds the rendered video should be long.")
 	parser.add_argument("--video_spp", type=int, default=8, help="Number of samples per pixel. A larger number means less noise, but slower rendering.")
@@ -62,11 +63,10 @@ def parse_args():
 	parser.add_argument("--n_steps", type=int, default=-1, help="Number of steps to train for before quitting.")
 	parser.add_argument("--second_window", action="store_true", help="Open a second window containing a copy of the main output.")
 
-	parser.add_argument("--sharpen", default=0, help="Set amount of sharpening applied to NeRF training images.")
+	parser.add_argument("--sharpen", default=0, help="Set amount of sharpening applied to NeRF training images. Range 0.0 to 1.0.")
 
 
-	args = parser.parse_args()
-	return args
+	return parser.parse_args()
 
 if __name__ == "__main__":
 	args = parse_args()
@@ -142,7 +142,7 @@ if __name__ == "__main__":
 	testbed.shall_train = args.train if args.gui else True
 
 
-	testbed.nerf.render_with_camera_distortion = True
+	testbed.nerf.render_with_lens_distortion = True
 
 	network_stem = os.path.splitext(os.path.basename(network))[0]
 	if args.mode == "sdf":
@@ -337,6 +337,7 @@ if __name__ == "__main__":
 
 	if args.video_camera_path:
 		testbed.load_camera_path(args.video_camera_path)
+		testbed.loop_animation = args.video_loop_animation
 
 		resolution = [args.width or 1920, args.height or 1080]
 		n_frames = args.video_n_seconds * args.video_fps
@@ -346,7 +347,7 @@ if __name__ == "__main__":
 		os.makedirs("tmp")
 
 		for i in tqdm(list(range(min(n_frames, n_frames+1))), unit="frames", desc=f"Rendering video"):
-			testbed.camera_smoothing = args.video_camera_smoothing and i > 0
+			testbed.camera_smoothing = args.video_camera_smoothing
 			frame = testbed.render(resolution[0], resolution[1], args.video_spp, True, float(i)/n_frames, float(i + 1)/n_frames, args.video_fps, shutter_fraction=0.5)
 			write_image(f"tmp/{i:04d}.jpg", np.clip(frame * 2**args.exposure, 0.0, 1.0), quality=100)
 

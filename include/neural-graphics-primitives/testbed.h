@@ -25,7 +25,7 @@
 #include <neural-graphics-primitives/shared_queue.h>
 #include <neural-graphics-primitives/trainable_buffer.cuh>
 
-#include <tiny-cuda-nn/cuda_graph.h>
+#include <tiny-cuda-nn/multi_stream.h>
 #include <tiny-cuda-nn/random.h>
 
 #include <json/json.hpp>
@@ -60,6 +60,7 @@ class GLTexture;
 
 class Testbed {
 public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	Testbed(ETestbedMode mode);
 	~Testbed();
 	Testbed(ETestbedMode mode, const std::string& data_path) : Testbed(mode) { load_training_data(data_path); }
@@ -86,7 +87,7 @@ public:
 			const BoundingBox& aabb,
 			float floor_y,
 			float plane_z,
-			float dof,
+			float aperture_size,
 			const float* envmap_data,
 			const Eigen::Vector2i& envmap_resolution,
 			Eigen::Array4f* frame_buffer,
@@ -138,21 +139,22 @@ public:
 			const Eigen::Matrix<float, 3, 4>& camera_matrix0,
 			const Eigen::Matrix<float, 3, 4>& camera_matrix1,
 			const Eigen::Vector4f& rolling_shutter,
-			Eigen::Vector2f screen_center,
-			Eigen::Vector3f parallax_shift,
+			const Eigen::Vector2f& screen_center,
+			const Eigen::Vector3f& parallax_shift,
+			const Eigen::Vector2i& quilting_dims,
 			bool snap_to_pixel_centers,
 			const BoundingBox& render_aabb,
 			const Eigen::Matrix3f& render_aabb_to_local,
 			float plane_z,
-			float dof,
-			const CameraDistortion& camera_distortion,
+			float aperture_size,
+			const Lens& lens,
 			const float* envmap_data,
 			const Eigen::Vector2i& envmap_resolution,
 			const float* distortion_data,
 			const Eigen::Vector2i& distortion_resolution,
 			Eigen::Array4f* frame_buffer,
 			float* depth_buffer,
-			uint8_t *grid,
+			uint8_t* grid,
 			int show_accel,
 			float cone_angle_constant,
 			ERenderMode render_mode,
@@ -322,13 +324,33 @@ public:
 	void generate_training_samples_sdf(Eigen::Vector3f* positions, float* distances, uint32_t n_to_generate, cudaStream_t stream, bool uniform_only);
 	void update_density_grid_nerf(float decay, uint32_t n_uniform_density_grid_samples, uint32_t n_nonuniform_density_grid_samples, cudaStream_t stream);
 	void update_density_grid_mean_and_bitfield(cudaStream_t stream);
+
+	struct NerfCounters {
+		tcnn::GPUMemory<uint32_t> numsteps_counter; // number of steps each ray took
+		tcnn::GPUMemory<uint32_t> numsteps_counter_compacted; // number of steps each ray took
+		tcnn::GPUMemory<float> loss;
+
+		uint32_t rays_per_batch = 1<<14;
+		uint32_t patches_per_batch = 0;
+		uint32_t n_rays_total = 0;
+		uint32_t n_patches_total = 0;
+		uint32_t measured_batch_size = 0;
+		uint32_t measured_batch_size_before_compaction = 0;
+
+		void prepare_for_training_steps(cudaStream_t stream, bool sample_patches, uint32_t patch_size);
+		float update_after_training(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
+	};
+
 	void train_nerf(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
-	void train_nerf_step(uint32_t target_batch_size, uint32_t n_rays_per_batch, uint32_t* counter, uint32_t* compacted_counter, float* loss, cudaStream_t stream);
+	void train_nerf_step(uint32_t target_batch_size, NerfCounters& counters, cudaStream_t stream);
 	void train_regnerf_step(uint32_t target_batch_size, uint32_t n_rays_per_batch, uint32_t n_patches_per_batch, uint32_t patch_size, uint32_t* counter, uint32_t* compacted_counter, float* loss, cudaStream_t stream);
 	void train_sdf(size_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void train_image(size_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void set_train(bool mtrain);
-	void dump_parameters_as_images();
+
+	template <typename T>
+	void dump_parameters_as_images(const T* params, const std::string& filename_base);
+
 	void imgui();
 	void training_prep_nerf(uint32_t batch_size, cudaStream_t stream);
 	void training_prep_sdf(uint32_t batch_size, cudaStream_t stream);
@@ -340,7 +362,7 @@ public:
 	void compute_mesh_vertex_colors();
 	tcnn::GPUMemory<float> get_density_on_grid(Eigen::Vector3i res3d, const BoundingBox& aabb, const Eigen::Matrix3f& render_aabb_to_local); // network version (nerf or sdf)
 	tcnn::GPUMemory<float> get_sdf_gt_on_grid(Eigen::Vector3i res3d, const BoundingBox& aabb, const Eigen::Matrix3f& render_aabb_to_local); // sdf gt version (sdf only)
-	tcnn::GPUMemory<Eigen::Array4f> get_rgba_on_grid(Eigen::Vector3i res3d, Eigen::Vector3f ray_dir);
+	tcnn::GPUMemory<Eigen::Array4f> get_rgba_on_grid(Eigen::Vector3i res3d, Eigen::Vector3f ray_dir, bool voxel_centers, float depth, bool density_as_alpha = false);
 	int marching_cubes(Eigen::Vector3i res3d, const BoundingBox& render_aabb, const Eigen::Matrix3f& render_aabb_to_local, float thresh);
 
 	// Determines the 3d focus point by rendering a little 16x16 depth image around
@@ -388,6 +410,8 @@ public:
 	void set_camera_from_time(float t);
 	void update_loss_graph();
 	void load_camera_path(const std::string& filepath_string);
+	bool loop_animation();
+	void set_loop_animation(bool value);
 
 	float compute_image_mse(bool quantize_to_byte);
 
@@ -432,6 +456,9 @@ public:
 
 	bool m_include_optimizer_state_in_snapshot = false;
 	bool m_render_ground_truth = false;
+	EGroundTruthRenderMode m_ground_truth_render_mode = EGroundTruthRenderMode::Shade;
+	float m_ground_truth_alpha = 1.0f;
+
 	bool m_train = false;
 	bool m_training_data_available = false;
 	bool m_render = true;
@@ -447,7 +474,7 @@ public:
 	float m_last_render_res_factor = 1.0f;
 	float m_scale = 1.0;
 	float m_prev_scale = 1.0;
-	float m_dof = 0.0f;
+	float m_aperture_size = 0.0f;
 	Eigen::Vector2f m_relative_focal_length = Eigen::Vector2f::Ones();
 	uint32_t m_fov_axis = 1;
 	float m_zoom = 1.f; // 2d zoom factor (for insets?)
@@ -469,6 +496,8 @@ public:
 	Eigen::Vector3f m_sun_dir = Eigen::Vector3f::Ones().normalized();
 	float m_bounding_radius = 1;
 	float m_exposure = 0.f;
+
+	Eigen::Vector2i m_quilting_dims = Eigen::Vector2i::Ones();
 
 	ERenderMode m_render_mode = ERenderMode::Shade;
 	EMeshRenderMode m_mesh_render_mode = EMeshRenderMode::VertexNormals;
@@ -555,23 +584,7 @@ public:
 			float intrinsic_l2_reg = 1e-4f;
 			float exposure_l2_reg = 0.0f;
 
-			struct Counters {
-				tcnn::GPUMemory<uint32_t> numsteps_counter; // number of steps each ray took
-				tcnn::GPUMemory<uint32_t> numsteps_counter_compacted; // number of steps each ray took
-				tcnn::GPUMemory<float> loss;
-
-				uint32_t rays_per_batch = 1<<14;
-				uint32_t patches_per_batch = 0;
-				uint32_t n_rays_total = 0;
-				uint32_t n_patches_total = 0;
-				uint32_t measured_batch_size = 0;
-				uint32_t measured_batch_size_before_compaction = 0;
-
-				void prepare_for_training_steps(cudaStream_t stream, bool sample_patches, uint32_t patch_size);
-				float update_after_training(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
-			};
-
-			Counters counters_rgb;
+			NerfCounters counters_rgb;
 
 			bool random_bg_color = true;
 			bool linear_colors = false;
@@ -603,6 +616,7 @@ public:
 
 			float near_distance = 0.2f;
 			float density_grid_decay = 0.95f;
+			default_rng_t density_grid_rng;
 			int view = 0;
 
 			float depth_supervision_lambda = 0.f;
@@ -647,8 +661,8 @@ public:
 		float cone_angle_constant = 1.f/256.f;
 
 		bool visualize_cameras = false;
-		bool render_with_camera_distortion = false;
-		CameraDistortion render_distortion = {};
+		bool render_with_lens_distortion = false;
+		Lens render_lens = {};
 
 		float rendering_min_transmittance = 0.01f;
 
@@ -786,6 +800,10 @@ public:
 	BoundingBox m_render_aabb;
 	Eigen::Matrix3f m_render_aabb_to_local;
 
+	Eigen::Matrix<float, 3, 4> crop_box(bool nerf_space) const;
+	std::vector<Eigen::Vector3f> crop_box_corners(bool nerf_space) const;
+	void set_crop_box(Eigen::Matrix<float, 3, 4> m, bool nerf_space);
+
 	// Rendering/UI bookkeeping
 	Ema m_training_prep_ms = {EEmaType::Time, 100};
 	Ema m_training_ms = {EEmaType::Time, 100};
@@ -810,12 +828,10 @@ public:
 	bool m_snap_to_pixel_centers = false;
 	bool m_edit_render_aabb = false;
 
-	Eigen::Vector2f m_parallax_shift = {0.f, 0.f}; // to shift the viewer's head position by some amount parallel to the screen
-	Eigen::Vector3f get_scaled_parallax_shift() const { return {m_parallax_shift.x(), m_parallax_shift.y(), m_scale}; } // pack m_scale into the parallax parameter so we know where the screen plane is.
+	Eigen::Vector3f m_parallax_shift = {0.0f, 0.0f, 0.0f}; // to shift the viewer's origin by some amount in camera space
 
 	// CUDA stuff
-	cudaStream_t m_training_stream;
-	cudaStream_t m_inference_stream;
+	tcnn::StreamAndEvent m_stream;
 
 	// Hashgrid encoding analysis
 	float m_quant_percent = 0.f;
@@ -841,6 +857,7 @@ public:
 	filesystem::path m_network_config_path;
 
 	nlohmann::json m_network_config;
+
 
 	default_rng_t m_rng;
 

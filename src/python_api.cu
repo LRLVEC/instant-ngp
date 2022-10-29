@@ -12,6 +12,7 @@
  *  @author Thomas Müller & Alex Evans, NVIDIA
  */
 
+#include <neural-graphics-primitives/common_device.cuh>
 #include <neural-graphics-primitives/testbed.h>
 #include <neural-graphics-primitives/thread_pool.h>
 
@@ -89,9 +90,9 @@ void Testbed::override_sdf_training_data(py::array_t<float> points, py::array_t<
 		distances_cpu[i] = dist;
 	}
 
-	CUDA_CHECK_THROW(cudaMemcpyAsync(m_sdf.training.positions.data(), points_cpu.data(), points_buf.shape[0] * points_buf.shape[1] * sizeof(float), cudaMemcpyHostToDevice, m_training_stream));
-	CUDA_CHECK_THROW(cudaMemcpyAsync(m_sdf.training.distances.data(), distances_cpu.data(), distances_buf.shape[0] * sizeof(float), cudaMemcpyHostToDevice, m_training_stream));
-	CUDA_CHECK_THROW(cudaStreamSynchronize(m_training_stream));
+	CUDA_CHECK_THROW(cudaMemcpyAsync(m_sdf.training.positions.data(), points_cpu.data(), points_buf.shape[0] * points_buf.shape[1] * sizeof(float), cudaMemcpyHostToDevice, m_stream.get()));
+	CUDA_CHECK_THROW(cudaMemcpyAsync(m_sdf.training.distances.data(), distances_cpu.data(), distances_buf.shape[0] * sizeof(float), cudaMemcpyHostToDevice, m_stream.get()));
+	CUDA_CHECK_THROW(cudaStreamSynchronize(m_stream.get()));
 	m_sdf.training.size = points_buf.shape[0];
 	m_sdf.training.idx = 0;
 	m_sdf.training.max_size = m_sdf.training.size;
@@ -131,16 +132,27 @@ py::array_t<float> Testbed::render_to_cpu(int width, int height, int spp, bool l
 	if (end_time < 0.f) {
 		end_time = start_time;
 	}
-
-	auto start_cam_matrix = m_smoothed_camera;
-
-	if (start_time >= 0.f) {
-		set_camera_from_time(end_time);
-		apply_camera_smoothing(1000.f / fps);
-	} else {
-		start_cam_matrix = m_smoothed_camera = m_camera;
+	bool path_animation_enabled = start_time >= 0.f;
+	if (!path_animation_enabled) { // the old code disabled camera smoothing for non-path renders; so we preserve that behaviour
+		m_smoothed_camera = m_camera;
 	}
 
+	// this rendering code assumes that the intra-frame camera motion starts from m_smoothed_camera (ie where we left off) to allow for EMA camera smoothing.
+	// in the case of a camera path animation, at the very start of the animation, we have yet to initialize smoothed_camera to something sensible
+	// - it will just be the default boot position. oops!
+	// that led to the first frame having a crazy streak from the default camera position to the start of the path.
+	// so we detect that case and explicitly force the current matrix to the start of the path
+	if (start_time == 0.f) {
+		set_camera_from_time(start_time);
+		m_smoothed_camera = m_camera;
+	}
+	auto start_cam_matrix = m_smoothed_camera;
+
+	// now set up the end-of-frame camera matrix if we are moving along a path
+	if (path_animation_enabled) {
+		set_camera_from_time(end_time);
+		apply_camera_smoothing(1000.f / fps);
+	}
 	auto end_cam_matrix = m_smoothed_camera;
 
 	for (int i = 0; i < spp; ++i) {
@@ -150,7 +162,7 @@ py::array_t<float> Testbed::render_to_cpu(int width, int height, int spp, bool l
 		auto sample_start_cam_matrix = log_space_lerp(start_cam_matrix, end_cam_matrix, start_alpha);
 		auto sample_end_cam_matrix = log_space_lerp(start_cam_matrix, end_cam_matrix, end_alpha);
 
-		if (start_time >= 0.f) {
+		if (path_animation_enabled) {
 			set_camera_from_time(start_time + (end_time-start_time) * (start_alpha + end_alpha) / 2.0f);
 			m_smoothed_camera = m_camera;
 		}
@@ -227,6 +239,11 @@ PYBIND11_MODULE(pyngp, m) {
 		.value("Volume", ETestbedMode::Volume)
 		.export_values();
 
+	py::enum_<EGroundTruthRenderMode>(m, "GroundTruthRenderMode")
+		.value("Shade", EGroundTruthRenderMode::Shade)
+		.value("Depth", EGroundTruthRenderMode::Depth)
+		.export_values();
+
 	py::enum_<ERenderMode>(m, "RenderMode")
 		.value("AO", ERenderMode::AO)
 		.value("Shade", ERenderMode::Shade)
@@ -289,11 +306,11 @@ PYBIND11_MODULE(pyngp, m) {
 		.value("Reinhard", ETonemapCurve::Reinhard)
 		.export_values();
 
-	py::enum_<ECameraDistortionMode>(m, "CameraDistortionMode")
-		.value("None", ECameraDistortionMode::None)
-		.value("Iterative", ECameraDistortionMode::Iterative)
-		.value("FTheta", ECameraDistortionMode::FTheta)
-		.value("LatLong", ECameraDistortionMode::LatLong)
+	py::enum_<ELensMode>(m, "LensMode")
+		.value("Perspective", ELensMode::Perspective)
+		.value("OpenCV", ELensMode::OpenCV)
+		.value("FTheta", ELensMode::FTheta)
+		.value("LatLong", ELensMode::LatLong)
 		.export_values();
 
 	py::class_<BoundingBox>(m, "BoundingBox")
@@ -366,9 +383,15 @@ PYBIND11_MODULE(pyngp, m) {
 		.def("destroy_window", &Testbed::destroy_window, "Destroy the window again.")
 		.def("train", &Testbed::train, py::call_guard<py::gil_scoped_release>(), "Perform a specified number of training steps.")
 		.def("reset", &Testbed::reset_network, py::arg("reset_density_grid") = true, "Reset training.")
-		.def("reset_accumulation", &Testbed::reset_accumulation, "Reset rendering accumulation.")
+		.def("reset_accumulation", &Testbed::reset_accumulation, "Reset rendering accumulation.",
+			py::arg("due_to_camera_movement") = false,
+			py::arg("immediate_redraw") = true
+		)
 		.def("reload_network_from_file", &Testbed::reload_network_from_file, py::arg("path")="", "Reload the network from a config file.")
-		.def("reload_network_from_json", &Testbed::reload_network_from_json, "Reload the network from a json object.")
+		.def("reload_network_from_json", &Testbed::reload_network_from_json, "Reload the network from a json object.",
+			py::arg("json"),
+			py::arg("config_base_path") = ""
+		)
 		.def("override_sdf_training_data", &Testbed::override_sdf_training_data, "Override the training data for learning a signed distance function")
 		.def("calculate_iou", &Testbed::calculate_iou, "Calculate the intersection over union error value",
 			py::arg("n_samples") = 128*1024*1024,
@@ -381,6 +404,7 @@ PYBIND11_MODULE(pyngp, m) {
 		.def("save_snapshot", &Testbed::save_snapshot, py::arg("path"), py::arg("include_optimizer_state")=false, "Save a snapshot of the currently trained model")
 		.def("load_snapshot", &Testbed::load_snapshot, py::arg("path"), "Load a previously saved snapshot")
 		.def("load_camera_path", &Testbed::load_camera_path, "Load a camera path", py::arg("path"))
+		.def_property("loop_animation", &Testbed::loop_animation, &Testbed::set_loop_animation)
 		.def("compute_and_save_png_slices", &Testbed::compute_and_save_png_slices,
 			py::arg("filename"),
 			py::arg("resolution") = Eigen::Vector3i::Constant(256),
@@ -422,9 +446,11 @@ PYBIND11_MODULE(pyngp, m) {
 		.def_readwrite("shall_train_encoding", &Testbed::m_train_encoding)
 		.def_readwrite("shall_train_network", &Testbed::m_train_network)
 		.def_readwrite("render_groundtruth", &Testbed::m_render_ground_truth)
+		.def_readwrite("groundtruth_render_mode", &Testbed::m_ground_truth_render_mode)
 		.def_readwrite("render_mode", &Testbed::m_render_mode)
 		.def_readwrite("slice_plane_z", &Testbed::m_slice_plane_z)
-		.def_readwrite("dof", &Testbed::m_dof)
+		.def_readwrite("dof", &Testbed::m_aperture_size)
+		.def_readwrite("aperture_size", &Testbed::m_aperture_size)
 		.def_readwrite("autofocus", &Testbed::m_autofocus)
 		.def_readwrite("autofocus_target", &Testbed::m_autofocus_target)
 		.def_readwrite("floor_enable", &Testbed::m_floor_enable)
@@ -440,6 +466,7 @@ PYBIND11_MODULE(pyngp, m) {
 		.def_readwrite("fov_axis", &Testbed::m_fov_axis)
 		.def_readwrite("zoom", &Testbed::m_zoom)
 		.def_readwrite("screen_center", &Testbed::m_screen_center)
+		.def_readwrite("training_batch_size", &Testbed::m_training_batch_size)
 		.def("set_nerf_camera_matrix", &Testbed::set_nerf_camera_matrix)
 		.def("set_camera_to_training_view", &Testbed::set_camera_to_training_view)
 		.def("first_training_view", &Testbed::first_training_view)
@@ -484,16 +511,20 @@ PYBIND11_MODULE(pyngp, m) {
 			}
 		)
 		.def_readwrite("dlss_sharpening", &Testbed::m_dlss_sharpening)
+		.def("crop_box", &Testbed::crop_box, py::arg("nerf_space") = true)
+		.def("set_crop_box", &Testbed::set_crop_box, py::arg("matrix"), py::arg("nerf_space") = true)
+		.def("crop_box_corners", &Testbed::crop_box_corners, py::arg("nerf_space") = true)
 		;
 
-	py::class_<CameraDistortion> camera_distortion(m, "CameraDistortion");
-	camera_distortion
-		.def_readwrite("mode", &CameraDistortion::mode)
+	py::class_<Lens> lens(m, "Lens");
+	lens
+		.def_readwrite("mode", &Lens::mode)
 		.def_property_readonly("params", [](py::object& obj) {
-			CameraDistortion& o = obj.cast<CameraDistortion&>();
+			Lens& o = obj.cast<Lens&>();
 			return py::array{sizeof(o.params)/sizeof(o.params[0]), o.params, obj};
 		})
 		;
+
 
 	py::class_<Testbed::Nerf> nerf(testbed, "Nerf");
 	nerf
@@ -501,8 +532,11 @@ PYBIND11_MODULE(pyngp, m) {
 		.def_readwrite("rgb_activation", &Testbed::Nerf::rgb_activation)
 		.def_readwrite("density_activation", &Testbed::Nerf::density_activation)
 		.def_readwrite("sharpen", &Testbed::Nerf::sharpen)
-		.def_readwrite("render_with_camera_distortion", &Testbed::Nerf::render_with_camera_distortion)
-		.def_readwrite("render_distortion", &Testbed::Nerf::render_distortion)
+		// Legacy member: lens used to be called "camera_distortion"
+		.def_readwrite("render_with_camera_distortion", &Testbed::Nerf::render_with_lens_distortion)
+		.def_readwrite("render_with_lens_distortion", &Testbed::Nerf::render_with_lens_distortion)
+		.def_readwrite("render_distortion", &Testbed::Nerf::render_lens)
+		.def_readwrite("render_lens", &Testbed::Nerf::render_lens)
 		.def_readwrite("rendering_min_transmittance", &Testbed::Nerf::rendering_min_transmittance)
 		.def_readwrite("cone_angle_constant", &Testbed::Nerf::cone_angle_constant)
 		.def_readwrite("visualize_cameras", &Testbed::Nerf::visualize_cameras)
@@ -526,7 +560,9 @@ PYBIND11_MODULE(pyngp, m) {
 	py::class_<TrainingImageMetadata> metadata(m, "TrainingImageMetadata");
 	metadata
 		.def_readwrite("focal_length", &TrainingImageMetadata::focal_length)
-		.def_readwrite("camera_distortion", &TrainingImageMetadata::camera_distortion)
+		// Legacy member: lens used to be called "camera_distortion"
+		.def_readwrite("camera_distortion", &TrainingImageMetadata::lens)
+		.def_readwrite("lens", &TrainingImageMetadata::lens)
 		.def_readwrite("principal_point", &TrainingImageMetadata::principal_point)
 		.def_readwrite("rolling_shutter", &TrainingImageMetadata::rolling_shutter)
 		.def_readwrite("light_dir", &TrainingImageMetadata::light_dir)
