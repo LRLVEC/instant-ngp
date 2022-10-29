@@ -145,6 +145,7 @@ public:
 			bool snap_to_pixel_centers,
 			const BoundingBox& render_aabb,
 			const Eigen::Matrix3f& render_aabb_to_local,
+			float near_distance,
 			float plane_z,
 			float aperture_size,
 			const Lens& lens,
@@ -671,7 +672,8 @@ public:
 		bool render_with_lens_distortion = false;
 		Lens render_lens = {};
 
-		float rendering_min_transmittance = 0.01f;
+		float render_near_distance = 0.00f;
+		float render_min_transmittance = 0.01f;
 
 		float glow_y_cutoff = 0.f;
 		int glow_mode = 0;
@@ -821,6 +823,8 @@ public:
 	std::chrono::time_point<std::chrono::steady_clock> m_last_gui_draw_time_point;
 	std::chrono::time_point<std::chrono::steady_clock> m_training_start_time_point;
 	Eigen::Array4f m_background_color = {0.0f, 0.0f, 0.0f, 1.0f};
+
+	bool m_vsync = false;
 
 	// Visualization of neuron activations
 	int m_visualized_dimension = -1;

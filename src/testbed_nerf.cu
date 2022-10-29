@@ -2190,6 +2190,7 @@ __global__ void init_rays_with_payload_kernel_nerf(
 	bool snap_to_pixel_centers,
 	BoundingBox render_aabb,
 	Matrix3f render_aabb_to_local,
+	float near_distance,
 	float plane_z,
 	float aperture_size,
 	Lens lens,
@@ -2262,7 +2263,7 @@ __global__ void init_rays_with_payload_kernel_nerf(
 		framebuffer[idx] = read_envmap(envmap_data, envmap_resolution, ray.d);
 	}
 
-	float t = fmaxf(render_aabb.ray_intersect(render_aabb_to_local * ray.o, render_aabb_to_local * ray.d).x(), NERF_RENDERING_NEAR_DISTANCE()) + 1e-6f;
+	float t = fmaxf(render_aabb.ray_intersect(render_aabb_to_local * ray.o, render_aabb_to_local * ray.d).x(), near_distance) + 1e-6f;
 
 	if (!render_aabb.contains(render_aabb_to_local * (ray.o + ray.d * t))) {
 		payload.origin = ray.o;
@@ -2371,6 +2372,7 @@ void Testbed::NerfTracer::init_rays_from_camera(
 	bool snap_to_pixel_centers,
 	const BoundingBox& render_aabb,
 	const Matrix3f& render_aabb_to_local,
+	float near_distance,
 	float plane_z,
 	float aperture_size,
 	const Lens& lens,
@@ -2405,6 +2407,7 @@ void Testbed::NerfTracer::init_rays_from_camera(
 		snap_to_pixel_centers,
 		render_aabb,
 		render_aabb_to_local,
+		near_distance,
 		plane_z,
 		aperture_size,
 		lens,
@@ -2667,6 +2670,7 @@ void Testbed::render_nerf(CudaRenderBuffer& render_buffer, const Vector2i& max_r
 		m_snap_to_pixel_centers,
 		m_render_aabb,
 		m_render_aabb_to_local,
+		m_nerf.render_near_distance,
 		plane_z,
 		m_aperture_size,
 		lens,
@@ -2706,7 +2710,7 @@ void Testbed::render_nerf(CudaRenderBuffer& render_buffer, const Vector2i& max_r
 			m_nerf.rgb_activation,
 			m_nerf.density_activation,
 			m_nerf.show_accel,
-			m_nerf.rendering_min_transmittance,
+			m_nerf.render_min_transmittance,
 			m_nerf.glow_y_cutoff,
 			m_nerf.glow_mode,
 			extra_dims_gpu,
