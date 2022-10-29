@@ -1,4 +1,12 @@
 # 1. Todo
+Planning:
+1. UE5 plugin (edit)
+2. mipnerf
+3. big scene
+4. aabb fit for scenes
+   1. cube
+   2. cuboid
+   3. unbounded
 ## 1.1. MipNeRF360
 1. change how cursor applys to the camera pos: testbed.cu: 1335, mouse_drag -- Done
 2. use s instead of t as the m in dist loss, define s -- Done
