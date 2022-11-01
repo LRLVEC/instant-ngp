@@ -1,4 +1,6 @@
 # 1. Todo
+**Note: release branch is used to developing future features, no new or legacy branches will be used**
+
 Planning:
 1. UE5 plugin (edit)
 2. mipnerf
@@ -53,3 +55,6 @@ regnerf buffers:
 
 ## 1.3. MultiGPU
 1. pixel streaming on multi-gpu
+
+## 1.4. pyngp
+The searching of pyngp library which is *.pyd or *.so should match the version of ngp since there are multiple version of ngp under folder build.
