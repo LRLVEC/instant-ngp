@@ -21,7 +21,7 @@ Planning:
 7. test the effect of dist loss and opacity loss, compare with native ngp
    1. render full images and video for test
    2. calculate psnr
-8. change 2 optimizer_step calls into 1 in function train_nerf()
+8. change multiple optimizer_step calls into one (merge batches)
 9. change opacity loss to see effects
 
 ### 1.1.1. Ideas

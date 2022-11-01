@@ -602,6 +602,7 @@ public:
 			bool snap_to_pixel_centers = true;
 			bool train_envmap = false;
 			bool train_extra_ray = true;
+			bool train_extra_patch = false;
 			float extra_ray_batch_ratio = 0.5;
 
 			bool optimize_distortion = false;

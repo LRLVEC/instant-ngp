@@ -516,6 +516,8 @@ void Testbed::imgui() {
 			ImGui::SameLine();
 			ImGui::Checkbox("Train extra rays", &m_nerf.training.train_extra_ray);
 			ImGui::SameLine();
+			ImGui::Checkbox("Train extra patches", &m_nerf.training.train_extra_patch);
+			ImGui::SameLine();
 			ImGui::Checkbox("Train extrinsics", &m_nerf.training.optimize_extrinsics);
 			ImGui::SameLine();
 			ImGui::Checkbox("Train exposure", &m_nerf.training.optimize_exposure);
@@ -543,6 +545,10 @@ void Testbed::imgui() {
 		ImGui::DragInt("Seed", (int*)&m_seed, 1.0f, 0, std::numeric_limits<int>::max());
 		ImGui::SliderInt("Batch size", (int*)&m_training_batch_size, 1 << 12, 1 << 22, "%d", ImGuiSliderFlags_Logarithmic);
 		ImGui::SliderFloat("Extra rays batch ratio", &m_nerf.training.extra_ray_batch_ratio, 0.f, 1.0f, "%.3f");
+		float fuck_test[3];
+		float fuck_min(0.f);
+		float fuck_max(1.f);
+		ImGui::SliderScalarNInOne("Fuck imgui", ImGuiDataType_Float, fuck_test, 3, &fuck_min, &fuck_max, "%.3f");
 		m_training_batch_size = next_multiple(m_training_batch_size, batch_size_granularity);
 
 		if (m_train) {
