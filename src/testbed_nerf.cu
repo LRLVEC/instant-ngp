@@ -1568,7 +1568,7 @@ __global__ void compute_loss_kernel_train_nerf(
 		swm += weight * s_coord_in[j];
 	}
 	float opacity = T + 1e-10f;
-	float dopacloss_by_dd = (1 + logf(opacity)) * opacity;
+	float dopacloss_by_dd = (1 + __logf(opacity)) * opacity;
 	T = 1.f;
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
 		if (max_level_rand_training) {
@@ -1939,7 +1939,7 @@ __global__ void compute_extra_ray_loss_kernel_train_nerf(
 		swm += weight * s_coord_in[j];
 	}
 	float opacity = T + 1e-10f;
-	float dopacloss_by_dd = (1 + logf(opacity)) * opacity;
+	float dopacloss_by_dd = (1 + __logf(opacity)) * opacity;
 	T = 1.f;
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
 		if (max_level_rand_training) {
