@@ -595,6 +595,7 @@ void Testbed::imgui() {
 			ImGui::SliderFloat("Cone angle", &m_nerf.cone_angle_constant, 0.0f, 1.0f/128.0f);
 			ImGui::SliderFloat("Depth supervision strength", &m_nerf.training.depth_supervision_lambda, 0.f, 1.f);
 
+			ImGui::SliderFloat("Entropy loss scale", &m_nerf.entropy_loss_scale, 1e-8f, 0.1f, "%.6f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
 			ImGui::SliderFloat("Distortion loss scale", &m_nerf.distortion_loss_scale, 1e-8f, 0.1f, "%.6f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
 			ImGui::SliderFloat("Opacity loss scale", &m_nerf.opacity_loss_scale, 1e-8f, 0.1f, "%.6f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
 			ImGui::SliderFloat("Extra rays distortion loss scale", &m_nerf.distortion_loss_scale_extra, 1e-8f, 0.1f, "%.6f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);

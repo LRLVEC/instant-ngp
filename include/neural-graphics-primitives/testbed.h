@@ -671,6 +671,7 @@ public:
 		float sharpen = 0.f;
 
 		float cone_angle_constant = 1.f/256.f;
+		float entropy_loss_scale = 3e-6f;
 		float distortion_loss_scale = 1e-2f;
 		float opacity_loss_scale = 1e-3f;
 		float distortion_loss_scale_extra = 1e-2f;

@@ -38,13 +38,16 @@ Planning:
 3. sample extra rays according to the density grid may be helpful?
    1. not very necessary since the sample num is the same
 
-## 1.3. RegNeRF
-1. calculate graidents for geometry loss in regnerf
-2. modify functions that sample a patch of pixels instead of single pixel
-   1. generate_training_samples_nerf: testbed_nerf.cu: 1049
-   2. compute_loss_kernel_train_nerf: testbed_nerf.cu: 1563
-   3. train_nerf_step: testbed_nerf.cu: 3001
-3. write my own functions
+## 1.2. RegNeRF
+1. calculate gradients for geometry loss in regnerf -- Done
+2. sample a patch of rays instead of single ray, geometry loss will not calculate on original rays
+   1. generate sample patches, including direction, starting point etc. Strategies for generating patches:
+      1. <font color=red>adaptively select average depth from camera</font> (store depth in a map?)
+      2. the origin point should be near a camera with small offset, offset is proportional to scene size
+      3. the end point should be selected randomly according to depth map of a camera
+      4. the spacing between rays in a patch is calculated by average depth and camera fov
+   2. generate rays from patches using a block of threads to generate a patch of rays
+3. compute loss and its gradients
    1. image_idx_regnerf: generate image index for each patch
    2. generate_training_patches_regnerf: output patch_pos (float: img, x, y)
    3. generate_training_samples_regnerf

@@ -1323,6 +1323,7 @@ __global__ void compute_loss_kernel_train_nerf(
 	float loss_scale,
 	float dist_loss_scale, // distortion loss scale
 	float opac_loss_scale, // opacity loss scale
+	float entropy_loss_scale, // entropy loss scale
 	int padded_output_width,
 	const float* __restrict__ envmap_data,
 	float* __restrict__ envmap_gradient,
@@ -1552,6 +1553,8 @@ __global__ void compute_loss_kernel_train_nerf(
 	T = 1.f;
 	float sw = 0.f;
 	float swm = 0.f;
+	float salpha = 0.f;
+	float salpha_ln_alpha = 0.f;
 	// calc sum_w and sum_wm
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
 		const NerfCoordinate* coord_in = coords_in(j);
@@ -1561,6 +1564,8 @@ __global__ void compute_loss_kernel_train_nerf(
 		const float alpha = 1.f - __expf(-density * dt);
 		const float weight = alpha * T;
 		T *= (1.f - alpha);
+		salpha += alpha;
+		salpha_ln_alpha += alpha * __logf(alpha + 1e-10f);
 		weights_out[j] = weight;
 		sum_w[j] = sw;
 		sum_wm[j] = swm;
@@ -1569,6 +1574,8 @@ __global__ void compute_loss_kernel_train_nerf(
 	}
 	float opacity = T + 1e-10f;
 	float dopacloss_by_dd = (1 + __logf(opacity)) * opacity;
+	salpha += 1e-10f;
+	salpha_ln_alpha /= salpha * salpha;
 	T = 1.f;
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
 		if (max_level_rand_training) {
@@ -1611,14 +1618,15 @@ __global__ void compute_loss_kernel_train_nerf(
 		if (j == 0) ddistloss_by_dw += 2 * (swm - sw * s_coord_in[j]);
 		else ddistloss_by_dw += 2 * (s_coord_in[j] * (sum_w[j - 1] + sum_w[j] - sw) + swm - sum_wm[j - 1] - sum_wm[j]);
 
-
+		if (salpha < 0.01) entropy_loss_scale = 0.f;
 		// dist_loss term should be dist_loss_scale * ddistloss_by_dw * T, but in order to reduce the fog, T is ignored (they are very small behind surfaces)
 		float dloss_by_dmlp = density_derivative * (
 			dt * (
 				lg.gradient.matrix().dot((T * rgb - suffix).matrix()) +
 				depth_supervision +
 				dist_loss_scale * ddistloss_by_dw * T +// distortion loss
-				opac_loss_scale * dopacloss_by_dd // opacity loss
+				opac_loss_scale * dopacloss_by_dd + // opacity loss
+				entropy_loss_scale * (1 - alpha) * (salpha_ln_alpha - __logf(alpha + 1e-10f) / salpha) //ray entropy loss
 				)
 			);
 
@@ -1779,6 +1787,7 @@ __global__ void compute_extra_ray_loss_kernel_train_nerf(
 	float loss_scale,
 	float dist_loss_scale, // distortion loss scale
 	float opac_loss_scale, // opacity loss scale
+	float entropy_loss_scale, // entropy loss scale
 	int padded_output_width, // 4, but use only density
 	//const float* __restrict__ envmap_data,
 	//float* __restrict__ envmap_gradient,
@@ -1923,6 +1932,8 @@ __global__ void compute_extra_ray_loss_kernel_train_nerf(
 	T = 1.f;
 	float sw = 0.f;
 	float swm = 0.f;
+	float salpha = 0.f;
+	float salpha_ln_alpha = 0.f;
 	// calc sum_w and sum_wm
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
 		const NerfCoordinate* coord_in = coords_in(j);
@@ -1932,6 +1943,8 @@ __global__ void compute_extra_ray_loss_kernel_train_nerf(
 		const float alpha = 1.f - __expf(-density * dt);
 		const float weight = alpha * T;
 		T *= (1.f - alpha);
+		salpha += alpha;
+		salpha_ln_alpha += alpha * __logf(alpha + 1e-10f);
 		weights_out[j] = weight;
 		sum_w[j] = sw;
 		sum_wm[j] = swm;
@@ -1940,6 +1953,8 @@ __global__ void compute_extra_ray_loss_kernel_train_nerf(
 	}
 	float opacity = T + 1e-10f;
 	float dopacloss_by_dd = (1 + __logf(opacity)) * opacity;
+	salpha += 1e-10f;
+	salpha_ln_alpha /= salpha * salpha;
 	T = 1.f;
 	for (uint32_t j = 0; j < compacted_numsteps; ++j) {
 		if (max_level_rand_training) {
@@ -1978,14 +1993,15 @@ __global__ void compute_extra_ray_loss_kernel_train_nerf(
 		if (j == 0) ddistloss_by_dw += 2 * (swm - sw * s_coord_in[j]);
 		else ddistloss_by_dw += 2 * (s_coord_in[j] * (sum_w[j - 1] + sum_w[j] - sw) + swm - sum_wm[j - 1] - sum_wm[j]);
 
-
+		if (salpha < 0.01) entropy_loss_scale = 0.f;
 		// dist_loss term should be dist_loss_scale * ddistloss_by_dw * T, but in order to reduce the fog, T is ignored (they are very small behind surfaces)
 		float dloss_by_dmlp = density_derivative * (
 			dt * (
 				//lg.gradient.matrix().dot((T * rgb - suffix).matrix()) + // remove because lg == 0
 				//depth_supervision + // remove because no supervision
 				dist_loss_scale * ddistloss_by_dw * T +// distortion loss
-				opac_loss_scale * dopacloss_by_dd // opacity loss
+				opac_loss_scale * dopacloss_by_dd + // opacity loss
+				entropy_loss_scale * (1 - alpha) * (salpha_ln_alpha - __logf(alpha + 1e-10f) / salpha) //ray entropy loss
 				)
 			);
 		local_dL_doutput[0] = 0;
@@ -4226,6 +4242,7 @@ void Testbed::train_nerf_step(uint32_t target_batch_size, Testbed::NerfCounters&
 		LOSS_SCALE,
 		m_nerf.distortion_loss_scale,// distortion loss scale
 		m_nerf.opacity_loss_scale,// opacity loss scale
+		m_nerf.entropy_loss_scale,// ray entropy loss scale
 		padded_output_width,
 		m_envmap.envmap->params(),
 		envmap_gradient,
@@ -4471,6 +4488,7 @@ void Testbed::train_extra_nerf_step(uint32_t target_batch_size, Testbed::NerfCou
 		LOSS_SCALE,
 		m_nerf.distortion_loss_scale_extra,// distortion loss scale
 		m_nerf.opacity_loss_scale_extra,// opacity loss scale
+		m_nerf.entropy_loss_scale, // ray entropy loss scale
 		padded_output_width,
 		//m_envmap.envmap->params(),
 		//envmap_gradient,
