@@ -9,7 +9,11 @@ Planning:
    1. cube
    2. cuboid
    3. unbounded
-## 1.1. MipNeRF360
+
+## 1.1. MipNeRF
+1. inference the weight function in hash grid encoding
+2. section sampling instead of point sampling
+## 1.2. MipNeRF360
 1. change how cursor applys to the camera pos: testbed.cu: 1335, mouse_drag -- Done
 2. use s instead of t as the m in dist loss, define s -- Done
 3. malloc gpu mem for the computation of cumsum of w and w*m -- Done
@@ -26,7 +30,7 @@ Planning:
 8. change multiple optimizer_step calls into one (merge batches)
 9. change opacity loss to see effects
 
-### 1.1.1. Ideas
+### 1.2.1. Ideas
 1. add unbounded scene encoding as mipnerf360 for ngp?
 2. add decay for distortion loss scale and opacity loss scale so they may converge faster?
    1. no, use 0.01 for distortion loss scale and 0.001 for opacity loss scale constantly
@@ -34,7 +38,7 @@ Planning:
 3. sample extra rays according to the density grid may be helpful?
    1. not very necessary since the sample num is the same
 
-## 1.2. RegNeRF
+## 1.3. RegNeRF
 1. calculate graidents for geometry loss in regnerf
 2. modify functions that sample a patch of pixels instead of single pixel
    1. generate_training_samples_nerf: testbed_nerf.cu: 1049
@@ -53,8 +57,12 @@ regnerf buffers:
 1. patch_pos (global): record img id and xy position
 2. (shared)
 
-## 1.3. MultiGPU
+## 1.4. InfoNeRF
+1. add ray entropy loss
+2. disregarding non-hitting rays
+
+## 1.5. MultiGPU
 1. pixel streaming on multi-gpu
 
-## 1.4. pyngp
+## 1.6. pyngp
 The searching of pyngp library which is *.pyd or *.so should match the version of ngp since there are multiple version of ngp under folder build.
