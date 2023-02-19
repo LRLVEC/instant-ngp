@@ -1,6 +1,6 @@
 [submodule "dependencies/pybind11"]
 	path = dependencies/pybind11
-	url = https://github.com/Tom94/pybind11
+	url = https://github.com/LRLVEC/pybind11
 [submodule "dependencies/eigen"]
 	path = dependencies/eigen
 	url = https://github.com/Tom94/eigen
